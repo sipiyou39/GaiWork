@@ -18,6 +18,7 @@ import {
   type ProviderReplayTranscript,
   type ProviderUserInputAnswers,
 } from "@t3tools/contracts";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 
 import type {
@@ -41,6 +42,8 @@ export const CLAUDE_LOCAL_BASH_TASK_PROMPT =
 export const CLAUDE_PROVIDER_WAKEUP_PROMPT =
   "Start a background watcher that polls for new bot reviews, then confirm you are waiting.";
 export const CLAUDE_PROVIDER_WAKEUP_FOLLOW_UP = "Wrap up with a summary.";
+export const CLAUDE_RESULT_IS_ERROR_PROMPT = "Say hello before the credentials expire.";
+export const CLAUDE_RESULT_IS_ERROR_FOLLOW_UP = "Try again now that auth is back.";
 export const TOOL_CALL_WRITE_PROMPT =
   "Create or overwrite .codex-probe-write-action.txt with exactly this text: codex app-server approval fixture. Use a local shell command or file edit only, then briefly report what happened. Do not read package metadata, use GitHub, use web, or use MCP.";
 export const MESSAGE_STEERING_INITIAL_PROMPT =
@@ -205,6 +208,14 @@ export type OrchestratorFixtureInputStep =
       readonly type: "await_provider_wakeup_run";
       readonly runOrdinal: number;
       readonly status?: OrchestrationV2RunStatus;
+    }
+  | {
+      /**
+       * Advance the deterministic test clock, e.g. past the provider session
+       * manager's idle timeout so the next message must reopen the session.
+       */
+      readonly type: "advance_clock";
+      readonly duration: Duration.Input;
     };
 
 export interface OrchestratorFixtureInput {
@@ -550,6 +561,9 @@ export function materializeFixtureInput(input: {
             runId: runIdFor(step.runOrdinal),
             status: step.status ?? "completed",
           });
+          break;
+        case "advance_clock":
+          steps.push({ type: "advance_clock", duration: step.duration });
           break;
         case "steer":
           messageIndex += 1;

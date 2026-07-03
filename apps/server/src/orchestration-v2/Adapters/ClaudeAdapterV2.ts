@@ -1656,7 +1656,9 @@ function terminalStatusFromResult(
   "completed" | "interrupted" | "failed" | "cancelled"
 > {
   if (message.subtype === "success") {
-    return "completed";
+    // The SDK reports API-level failures (401 auth, 529 overloaded, …) as
+    // subtype "success" with is_error set; the turn produced no real work.
+    return message.is_error ? "failed" : "completed";
   }
   const errorText = message.errors.join("\n").toLowerCase();
   if (errorText.includes("interrupt")) {
@@ -1670,6 +1672,28 @@ function terminalStatusFromResult(
 
 function isClaudeActiveSteeringAbortResult(message: SDKResultMessage): boolean {
   return message.terminal_reason === "aborted_streaming";
+}
+
+function providerFailureFromResult(
+  message: SDKResultMessage,
+): OrchestrationV2ProviderFailure | null {
+  if (message.subtype !== "success") {
+    return makeProviderFailure({
+      message: message.errors.join("\n"),
+      code: message.subtype,
+      class: "provider_error",
+    });
+  }
+  if (!message.is_error) {
+    return null;
+  }
+  const apiErrorStatus = message.api_error_status ?? null;
+  return makeProviderFailure({
+    message: message.result,
+    code: apiErrorStatus === null ? "sdk_result_error" : `api_error_${apiErrorStatus}`,
+    class: "provider_error",
+    retryable: apiErrorStatus === 429 || apiErrorStatus === 529 ? true : null,
+  });
 }
 
 function buildAssistantArtifacts(input: {
@@ -3203,7 +3227,12 @@ export function makeClaudeAdapterV2(
             return;
           }
 
-          const resultText = resultTextFromSdkMessage(message);
+          // An is_error result's text is the error message; it belongs on the
+          // terminal-failure item, not on a synthetic assistant message.
+          const resultText =
+            message.type === "result" && message.subtype === "success" && message.is_error
+              ? null
+              : resultTextFromSdkMessage(message);
           if (
             context.assistant.emittedNativeItemIds.size === 0 &&
             context.assistant.fallbackText.length === 0 &&
@@ -3224,6 +3253,7 @@ export function makeClaudeAdapterV2(
             if (
               !interrupted &&
               message.subtype === "success" &&
+              !message.is_error &&
               context.pendingScheduledWakeup !== null
             ) {
               // The turn yielded on ScheduleWakeup (result stop_reason
@@ -3247,19 +3277,12 @@ export function makeClaudeAdapterV2(
               next.delete(context.providerTurnId);
               return next;
             });
+            const resultFailure = interrupted ? null : providerFailureFromResult(message);
             yield* finalizeActiveTurn({
               context,
               status: interrupted ? "interrupted" : terminalStatusFromResult(message),
               completedAt,
-              ...(message.subtype === "success" || interrupted
-                ? {}
-                : {
-                    failure: makeProviderFailure({
-                      message: message.errors.join("\n"),
-                      code: message.subtype,
-                      class: "provider_error",
-                    }),
-                  }),
+              ...(resultFailure === null ? {} : { failure: resultFailure }),
             });
           }
         });
@@ -3395,16 +3418,17 @@ export function makeClaudeAdapterV2(
             yield* existing.query.close.pipe(Effect.ignore);
           }
 
-          const openedWithResume = yield* Ref.modify(openedNativeThreads, (current) => {
-            const hasOpenedThread = current.has(nativeThreadId);
-            if (hasOpenedThread) {
-              return [true, current];
-            }
-            const updated = new Set(current);
-            updated.add(nativeThreadId);
-            return [false, updated];
-          });
-          const shouldResume = resumeSessionAt !== undefined || openedWithResume;
+          const openedThisRuntime = (yield* Ref.get(openedNativeThreads)).has(nativeThreadId);
+          // openedNativeThreads dies with this session runtime (idle release,
+          // app restart). The persisted provider thread is the durable signal:
+          // firstRunOrdinal is stamped when a turn starts, so an earlier run
+          // means the native session was already opened and must be resumed —
+          // a create-style open for an existing session fails the whole turn.
+          const establishedByPriorRun =
+            turnInput.providerThread.firstRunOrdinal !== null &&
+            turnInput.providerThread.firstRunOrdinal < turnInput.runOrdinal;
+          const shouldResume =
+            resumeSessionAt !== undefined || openedThisRuntime || establishedByPriorRun;
           const querySession = yield* queryRunner.open({
             threadId: turnInput.threadId,
             providerSessionId: input.providerSessionId,
@@ -3424,6 +3448,16 @@ export function makeClaudeAdapterV2(
                 : { allowDangerouslySkipPermissions: queryPolicy.allowDangerouslySkipPermissions }),
               ...(shouldInstallClaudePermissionCallback(queryPolicy) ? { canUseTool } : {}),
             }),
+          });
+          // Marked only after a successful open: a failed create must not
+          // leave the runtime believing the native session exists.
+          yield* Ref.update(openedNativeThreads, (current) => {
+            if (current.has(nativeThreadId)) {
+              return current;
+            }
+            const updated = new Set(current);
+            updated.add(nativeThreadId);
+            return updated;
           });
           const closed = yield* Deferred.make<void, never>();
           const context: ClaudeLiveQueryContext = {
