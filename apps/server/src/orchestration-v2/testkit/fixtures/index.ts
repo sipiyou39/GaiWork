@@ -8,6 +8,8 @@ import { claudeIdleResumeInput } from "./claude_idle_resume/input.ts";
 import { assertClaudeIdleResumeOutput } from "./claude_idle_resume/output.ts";
 import { claudeResultIsErrorInput } from "./claude_result_is_error/input.ts";
 import { assertClaudeResultIsErrorOutput } from "./claude_result_is_error/output.ts";
+import { claudeTextSegmentsInput } from "./claude_text_segments/input.ts";
+import { assertClaudeTextSegmentsOutput } from "./claude_text_segments/output.ts";
 import { grokSubagentLineageInput } from "./grok_subagent_lineage/input.ts";
 import { assertGrokSubagentLineageOutput } from "./grok_subagent_lineage/output.ts";
 import { assertClaudeMessageSteeringOutput } from "./message_steering/claude_output.ts";
@@ -140,6 +142,21 @@ export const ORCHESTRATOR_REPLAY_FIXTURES = [
         ),
         modelSelection: CLAUDE_MODEL_SELECTION,
         assertOutput: assertClaudeResultIsErrorOutput,
+      },
+    ],
+  },
+  {
+    name: "claude_text_segments",
+    buildInput: claudeTextSegmentsInput,
+    providers: [
+      {
+        driver: ProviderDriverKind.make("claudeAgent"),
+        transcriptFile: new URL(
+          "./claude_text_segments/claude_transcript.ndjson",
+          import.meta.url,
+        ),
+        modelSelection: CLAUDE_MODEL_SELECTION,
+        assertOutput: assertClaudeTextSegmentsOutput,
       },
     ],
   },
