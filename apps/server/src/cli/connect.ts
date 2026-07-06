@@ -27,8 +27,10 @@ import {
 } from "effect/unstable/http";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
+import packageJson from "../../package.json" with { type: "json" };
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as BootService from "../cloud/bootService.ts";
 import * as CliState from "../cloud/CliState.ts";
 import * as CliTokenManager from "../cloud/CliTokenManager.ts";
 import { CLOUD_LINKED_USER_ID, RELAY_URL_SECRET } from "../cloud/config.ts";
@@ -348,6 +350,19 @@ const disconnectCloud = Effect.fn("cloud.cli.disconnect")(function* (options: {
   if (options.clearAuthorization) {
     const tokens = yield* CliTokenManager.CloudCliTokenManager;
     yield* tokens.clear;
+
+    const bootService = yield* BootService.BootService;
+    const { installed } = yield* bootService.status.pipe(
+      Effect.orElseSucceed(() => ({ installed: false })),
+    );
+    if (installed) {
+      yield* bootService.uninstall.pipe(
+        Effect.tap(Console.log("Removed the T3 Code background service.")),
+        Effect.catch((error) =>
+          Console.warn(`Could not remove the background service: ${error.message}`),
+        ),
+      );
+    }
   }
 
   yield* reportCloudDisconnectResults({
@@ -370,6 +385,7 @@ const runCloudCommand = <A, E>(
     | CliTokenManager.CloudCliTokenManager
     | RelayClient.RelayClient
     | EnvironmentAuth.EnvironmentAuth
+    | BootService.BootService
     | Crypto.Crypto
     | FileSystem.FileSystem
     | HttpClient.HttpClient
@@ -391,6 +407,11 @@ const runCloudCommand = <A, E>(
       RelayClient.layerCloudflared({ baseDir: config.baseDir }),
       EnvironmentAuth.runtimeLayer,
       ServerEnvironment.layer,
+      BootService.layer({
+        baseDir: config.baseDir,
+        logsDir: config.logsDir,
+        cliVersion: packageJson.version,
+      }),
       headlessRelayClientTracingLayer,
     ).pipe(
       Layer.provideMerge(FetchHttpClient.layer),
@@ -514,6 +535,29 @@ const connectLogoutCommand = Command.make("logout", {
   ),
 );
 
+const offerBootService = Effect.gen(function* () {
+  const bootService = yield* BootService.BootService;
+  const { installed } = yield* bootService.status;
+  if (installed) {
+    yield* Console.log("T3 Code is already set up to run in the background on this machine.");
+    return true;
+  }
+  const wanted = yield* Prompt.run(
+    Prompt.confirm({
+      message:
+        "Run T3 Code in the background whenever this machine boots? " +
+        "It stays reachable through T3 Connect even after you log out.",
+      initial: true,
+    }),
+  );
+  if (!wanted) {
+    return false;
+  }
+  const plan = yield* bootService.install;
+  yield* Console.log(`Background service installed. Logs: ${plan.logPath}`);
+  return true;
+});
+
 export const connectCommand = Command.make("connect", {
   ...projectLocationFlags,
   paste: pasteFlag,
@@ -526,11 +570,17 @@ export const connectCommand = Command.make("connect", {
         if (!(yield* linkEnvironmentForConnect(flags))) {
           return;
         }
-        yield* Console.log(
-          "\nConnected! This environment will be available through T3 Connect whenever T3 is running.",
+        yield* Console.log("\nConnected!");
+
+        const background = yield* offerBootService.pipe(
+          Effect.catchTag("BootServiceUnsupportedError", (error) =>
+            Console.log(`Skipping background setup: ${error.message}`).pipe(Effect.as(false)),
+          ),
         );
         yield* Console.log(
-          "Start it with `t3 serve`, or run `t3 connect status` to inspect the link.",
+          background
+            ? "\nGreat, T3 Code is now set up and ready to go."
+            : "\nT3 Connect is set up. Start the server with `t3 serve` to make this machine reachable.",
         );
       }),
     ),
