@@ -221,7 +221,7 @@ interface CreateDevRunnerEnvInput {
   readonly serverOffset: number;
   readonly webOffset: number;
   readonly t3Home: string | undefined;
-  readonly noBrowser: boolean | undefined;
+  readonly browser: boolean | undefined;
   readonly autoBootstrapProjectFromCwd: boolean | undefined;
   readonly logWebSocketEvents: boolean | undefined;
   readonly host: string | undefined;
@@ -235,7 +235,7 @@ export function createDevRunnerEnv({
   serverOffset,
   webOffset,
   t3Home,
-  noBrowser,
+  browser,
   autoBootstrapProjectFromCwd,
   logWebSocketEvents,
   host,
@@ -281,8 +281,8 @@ export function createDevRunnerEnv({
     }
 
     if (!isDesktopMode) {
-      if (noBrowser !== undefined) {
-        output.T3CODE_NO_BROWSER = noBrowser ? "1" : "0";
+      if (browser === true) {
+        output.T3CODE_NO_BROWSER = "0";
       } else if (!output.T3CODE_NO_BROWSER?.trim()) {
         output.T3CODE_NO_BROWSER = "1";
       }
@@ -477,7 +477,7 @@ export function resolveModePortOffsets<R = NetService.NetService>({
 interface DevRunnerCliInput {
   readonly mode: DevMode;
   readonly t3Home: string | undefined;
-  readonly noBrowser: boolean | undefined;
+  readonly browser: boolean | undefined;
   readonly autoBootstrapProjectFromCwd: boolean | undefined;
   readonly logWebSocketEvents: boolean | undefined;
   readonly host: string | undefined;
@@ -515,7 +515,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       serverOffset,
       webOffset,
       t3Home: input.t3Home,
-      noBrowser: input.noBrowser,
+      browser: input.browser,
       autoBootstrapProjectFromCwd: input.autoBootstrapProjectFromCwd,
       logWebSocketEvents: input.logWebSocketEvents,
       host: input.host,
@@ -600,11 +600,8 @@ const devRunnerCli = Command.make("dev-runner", {
     ),
     Flag.withFallbackConfig(optionalStringConfig("T3CODE_HOME")),
   ),
-  noBrowser: Flag.boolean("no-browser").pipe(
-    Flag.withDescription(
-      "Disable browser auto-open (default for web dev; set T3CODE_NO_BROWSER=0 to opt in).",
-    ),
-    Flag.map((value) => (value ? true : undefined)),
+  browser: Flag.boolean("browser").pipe(
+    Flag.withDescription("Open a browser automatically (disabled by default for web dev)."),
   ),
   autoBootstrapProjectFromCwd: Flag.boolean("auto-bootstrap-project-from-cwd").pipe(
     Flag.withDescription(

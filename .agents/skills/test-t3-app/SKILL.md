@@ -16,7 +16,7 @@ description: Launch and test the T3 Code web app in isolated development environ
 
 Treat a base directory as disposable only when it was created or deliberately selected for the current test. Never delete or directly seed the shared `~/.t3` directory. Prefer starting with a new temporary base directory over clearing state of uncertain ownership.
 
-The dev runner disables browser auto-open by default. Do not opt back into auto-open during automated testing: an automatically opened page can consume the one-time bootstrap token before the controlled browser uses it.
+The dev runner disables browser auto-open by default. Do not pass `--browser` during automated testing: an automatically opened page can consume the one-time bootstrap token before the controlled browser uses it.
 
 ## Authenticate the browser on the first navigation
 
