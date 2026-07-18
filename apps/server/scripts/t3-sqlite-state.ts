@@ -20,27 +20,30 @@ import * as NodeSqliteClient from "../src/persistence/NodeSqliteClient.ts";
 export const SqliteStateOperation = Schema.Literals(["query", "exec"]);
 export type SqliteStateOperation = typeof SqliteStateOperation.Type;
 
-const SqliteStateInputErrorReason = Schema.Literals([
-  "multiple-sql-sources",
-  "missing-sql-source",
-  "empty-sql",
-]);
-
-export class SqliteStateInputError extends Schema.TaggedErrorClass<SqliteStateInputError>()(
-  "SqliteStateInputError",
-  {
-    reason: SqliteStateInputErrorReason,
-  },
+export class SqliteStateMultipleSqlSourcesError extends Schema.TaggedErrorClass<SqliteStateMultipleSqlSourcesError>()(
+  "SqliteStateMultipleSqlSourcesError",
+  {},
 ) {
   override get message(): string {
-    switch (this.reason) {
-      case "multiple-sql-sources":
-        return "Provide only one of --sql or --file.";
-      case "missing-sql-source":
-        return "Provide one of --sql or --file.";
-      case "empty-sql":
-        return "SQL input is empty.";
-    }
+    return "Provide only one of --sql or --file.";
+  }
+}
+
+export class SqliteStateMissingSqlSourceError extends Schema.TaggedErrorClass<SqliteStateMissingSqlSourceError>()(
+  "SqliteStateMissingSqlSourceError",
+  {},
+) {
+  override get message(): string {
+    return "Provide one of --sql or --file.";
+  }
+}
+
+export class SqliteStateEmptySqlError extends Schema.TaggedErrorClass<SqliteStateEmptySqlError>()(
+  "SqliteStateEmptySqlError",
+  {},
+) {
+  override get message(): string {
+    return "SQL input is empty.";
   }
 }
 
@@ -130,10 +133,10 @@ const resolveSqlSource = Effect.fn("resolveSqliteStateSqlSource")(function* (
   file: string | undefined,
 ) {
   if (sql !== undefined && file !== undefined) {
-    return yield* new SqliteStateInputError({ reason: "multiple-sql-sources" });
+    return yield* new SqliteStateMultipleSqlSourcesError();
   }
   if (sql === undefined && file === undefined) {
-    return yield* new SqliteStateInputError({ reason: "missing-sql-source" });
+    return yield* new SqliteStateMissingSqlSourceError();
   }
 
   const fs = yield* FileSystem.FileSystem;
@@ -150,7 +153,7 @@ const resolveSqlSource = Effect.fn("resolveSqliteStateSqlSource")(function* (
 
   const trimmed = source.trim();
   if (trimmed.length === 0) {
-    return yield* new SqliteStateInputError({ reason: "empty-sql" });
+    return yield* new SqliteStateEmptySqlError();
   }
   return trimmed;
 });
