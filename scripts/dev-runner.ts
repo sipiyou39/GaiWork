@@ -281,7 +281,11 @@ export function createDevRunnerEnv({
     }
 
     if (!isDesktopMode) {
-      output.T3CODE_NO_BROWSER = (noBrowser ?? true) ? "1" : "0";
+      if (noBrowser !== undefined) {
+        output.T3CODE_NO_BROWSER = noBrowser ? "1" : "0";
+      } else if (!output.T3CODE_NO_BROWSER?.trim()) {
+        output.T3CODE_NO_BROWSER = "1";
+      }
     }
 
     if (autoBootstrapProjectFromCwd !== undefined) {
@@ -600,7 +604,7 @@ const devRunnerCli = Command.make("dev-runner", {
     Flag.withDescription(
       "Disable browser auto-open (default for web dev; set T3CODE_NO_BROWSER=0 to opt in).",
     ),
-    Flag.withFallbackConfig(optionalBooleanConfig("T3CODE_NO_BROWSER")),
+    Flag.map((value) => (value ? true : undefined)),
   ),
   autoBootstrapProjectFromCwd: Flag.boolean("auto-bootstrap-project-from-cwd").pipe(
     Flag.withDescription(

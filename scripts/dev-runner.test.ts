@@ -167,6 +167,26 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
+    it.effect("preserves the environment opt-in when the CLI flag is omitted", () =>
+      Effect.gen(function* () {
+        const env = yield* createDevRunnerEnv({
+          mode: "dev",
+          baseEnv: { T3CODE_NO_BROWSER: "0" },
+          serverOffset: 0,
+          webOffset: 0,
+          t3Home: undefined,
+          noBrowser: undefined,
+          autoBootstrapProjectFromCwd: undefined,
+          logWebSocketEvents: undefined,
+          host: undefined,
+          port: undefined,
+          devUrl: undefined,
+        });
+
+        assert.equal(env.T3CODE_NO_BROWSER, "0");
+      }),
+    );
+
     it.effect("supports explicit typed overrides", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;

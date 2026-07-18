@@ -46,6 +46,7 @@ it.layer(NodeServices.layer)("t3-sqlite-state", (it) => {
   it.effect("backs up isolated state before writes and refuses the shared home", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-sqlite-state-exec-" });
       yield* createFixtureDatabase(baseDir);
 
@@ -68,6 +69,21 @@ it.layer(NodeServices.layer)("t3-sqlite-state", (it) => {
         { sharedHome: baseDir },
       ).pipe(Effect.flip);
       assert.equal(error._tag, "SqliteStateSharedHomeMutationError");
+
+      const aliasParent = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-sqlite-state-alias-",
+      });
+      const aliasBaseDir = path.join(aliasParent, "shared-home-alias");
+      yield* fs.symlink(baseDir, aliasBaseDir);
+      const aliasError = yield* runSqliteState(
+        {
+          operation: "exec",
+          baseDir: aliasBaseDir,
+          sql: "DELETE FROM fixtures",
+        },
+        { sharedHome: baseDir },
+      ).pipe(Effect.flip);
+      assert.equal(aliasError._tag, "SqliteStateSharedHomeMutationError");
     }),
   );
 });

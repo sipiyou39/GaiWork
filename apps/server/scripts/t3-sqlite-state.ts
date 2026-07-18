@@ -186,8 +186,14 @@ export const runSqliteState = Effect.fn("runSqliteState")(function* (
   if (!(yield* fs.exists(databasePath))) {
     return yield* new SqliteStateDatabaseMissingError({ databasePath });
   }
-  if (input.operation === "exec" && baseDir === sharedHome) {
-    return yield* new SqliteStateSharedHomeMutationError();
+  if (input.operation === "exec") {
+    const [canonicalBaseDir, canonicalSharedHome] = yield* Effect.all([
+      fs.realPath(baseDir),
+      fs.realPath(sharedHome).pipe(Effect.orElseSucceed(() => sharedHome)),
+    ]);
+    if (canonicalBaseDir === canonicalSharedHome) {
+      return yield* new SqliteStateSharedHomeMutationError();
+    }
   }
 
   const program = Effect.gen(function* () {
