@@ -172,6 +172,12 @@ export default defineConfig(() => {
       outDir: "dist",
       emptyOutDir: true,
       sourcemap: buildSourcemap,
+      rollupOptions: {
+        input: {
+          main: "index.html",
+          companion: "companion.html",
+        },
+      },
     },
     test: {
       projects: [defineProject(unitTestProject)],

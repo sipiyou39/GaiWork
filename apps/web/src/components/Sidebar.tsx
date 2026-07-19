@@ -57,6 +57,11 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
+import {
+  findCompanionAssignmentForThread,
+  projectCompanionState,
+  sidebarCompanionDisplayDimensions,
+} from "@t3tools/client-runtime/companions";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
   isAtomCommandInterrupted,
@@ -221,6 +226,9 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { SidebarProviderUpdatePill } from "./sidebar/SidebarProviderUpdatePill";
+import { CompanionSprite } from "./companions/CompanionSprite";
+import { useCompanionPicker } from "./companions/CompanionPicker";
+import { useAcknowledgeCompanionCompletion } from "./companions/useAcknowledgeCompanionCompletion";
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
   created_at: "Created at",
@@ -384,6 +392,15 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
+  const acknowledgedTurnId = useUiStateStore(
+    (state) => state.companionAcknowledgedTurnIdByThreadKey[threadKey],
+  );
+  const companionAssignments = useClientSettings((settings) => settings.companionAssignments);
+  const companionSidebarScalePercent = useClientSettings(
+    (settings) => settings.companionSidebarScalePercent,
+  );
+  const companionAssignment = findCompanionAssignmentForThread(companionAssignments, threadRef);
+  const companionDimensions = sidebarCompanionDisplayDimensions(companionSidebarScalePercent);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
@@ -398,6 +415,13 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     reportFailure: false,
   });
   const environment = useEnvironment(thread.environmentId);
+  const companionState = companionAssignment
+    ? projectCompanionState({
+        thread,
+        acknowledgedTurnId,
+        connectionAvailable: environment?.connection.phase === "connected",
+      })
+    : null;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const isRemoteThread =
     primaryEnvironmentId !== null && thread.environmentId !== primaryEnvironmentId;
@@ -685,12 +709,32 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
           isActive,
           isSelected,
         })} relative isolate`}
+        style={
+          companionAssignment
+            ? { height: `${Math.max(36, companionDimensions.height + 6)}px` }
+            : undefined
+        }
         onClick={handleRowClick}
         onDoubleClick={handleRowDoubleClick}
         onKeyDown={handleRowKeyDown}
         onContextMenu={handleRowContextMenu}
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+          {companionAssignment && companionState ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <CompanionSprite
+                    companionId={companionAssignment.companionId}
+                    animation={companionState.animation}
+                    accessibleLabel={companionState.accessibleLabel}
+                    style={companionDimensions}
+                  />
+                }
+              />
+              <TooltipPopup side="top">{companionState.accessibleLabel}</TooltipPopup>
+            </Tooltip>
+          ) : null}
           {prStatus && (
             <Tooltip>
               <TooltipTrigger
@@ -708,7 +752,9 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
               <TooltipPopup side="top">{prStatus.tooltip}</TooltipPopup>
             </Tooltip>
           )}
-          {threadStatus && <ThreadStatusLabel status={threadStatus} />}
+          {!companionAssignment && threadStatus ? (
+            <ThreadStatusLabel status={threadStatus} />
+          ) : null}
           {renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}
@@ -1122,12 +1168,15 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     reportFailure: false,
   });
   const updateSettings = useUpdateClientSettings();
+  const { openCompanionPicker } = useCompanionPicker();
   const sidebarThreadPreviewCount = useClientSettings<SidebarThreadPreviewCount>(
     (settings) => settings.sidebarThreadPreviewCount,
   );
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const markThreadUnread = useUiStateStore((state) => state.markThreadUnread);
+  const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
+  const acknowledgeCompanionCompletion = useAcknowledgeCompanionCompletion();
   const setProjectExpanded = useUiStateStore((state) => state.setProjectExpanded);
   const toggleThreadSelection = useThreadSelectionStore((state) => state.toggleThread);
   const rangeSelectTo = useThreadSelectionStore((state) => state.rangeSelectTo);
@@ -1698,6 +1747,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
   const navigateToThread = useCallback(
     (threadRef: ScopedThreadRef) => {
+      acknowledgeCompanionCompletion(threadRef);
+      markThreadVisited(scopedThreadKey(threadRef), new Date().toISOString());
       if (useThreadSelectionStore.getState().selectedThreadKeys.size > 0) {
         clearSelection();
       }
@@ -1710,7 +1761,15 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         params: buildThreadRouteParams(threadRef),
       });
     },
-    [clearSelection, isMobile, router, setOpenMobile, setSelectionAnchor],
+    [
+      acknowledgeCompanionCompletion,
+      clearSelection,
+      isMobile,
+      markThreadVisited,
+      router,
+      setOpenMobile,
+      setSelectionAnchor,
+    ],
   );
 
   const handleThreadClick = useCallback(
@@ -1747,6 +1806,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (currentSelectionCount > 0) {
         clearSelection();
       }
+      acknowledgeCompanionCompletion(threadRef);
+      markThreadVisited(threadKey, new Date().toISOString());
       setSelectionAnchor(threadKey);
       if (isMobile) {
         setOpenMobile(false);
@@ -1757,8 +1818,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       });
     },
     [
+      acknowledgeCompanionCompletion,
       clearSelection,
       isMobile,
+      markThreadVisited,
       rangeSelectTo,
       router,
       setOpenMobile,
@@ -2128,6 +2191,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       const clicked = await api.contextMenu.show(
         [
           { id: "rename", label: "Rename thread" },
+          { id: "choose-companion", label: "Choose companion…" },
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
@@ -2138,6 +2202,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
       if (clicked === "rename") {
         startThreadRename(threadKey, thread.title);
+        return;
+      }
+
+      if (clicked === "choose-companion") {
+        openCompanionPicker(threadRef);
         return;
       }
 
@@ -2194,6 +2263,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       deleteThread,
       markThreadUnread,
       memberProjectByScopedKey,
+      openCompanionPicker,
       project.workspaceRoot,
       startThreadRename,
     ],
@@ -3110,6 +3180,8 @@ export default function Sidebar() {
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);
+  const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
+  const acknowledgeCompanionCompletion = useAcknowledgeCompanionCompletion();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (loc) => loc.pathname });
   const isOnSettings = pathname.startsWith("/settings");
@@ -3285,6 +3357,8 @@ export default function Sidebar() {
 
   const navigateToThread = useCallback(
     (threadRef: ScopedThreadRef) => {
+      acknowledgeCompanionCompletion(threadRef);
+      markThreadVisited(scopedThreadKey(threadRef), new Date().toISOString());
       if (useThreadSelectionStore.getState().selectedThreadKeys.size > 0) {
         clearSelection();
       }
@@ -3297,7 +3371,15 @@ export default function Sidebar() {
         params: buildThreadRouteParams(threadRef),
       });
     },
-    [clearSelection, isMobile, navigate, setOpenMobile, setSelectionAnchor],
+    [
+      acknowledgeCompanionCompletion,
+      clearSelection,
+      isMobile,
+      markThreadVisited,
+      navigate,
+      setOpenMobile,
+      setSelectionAnchor,
+    ],
   );
 
   const projectDnDSensors = useSensors(

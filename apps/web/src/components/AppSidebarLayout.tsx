@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
 import { isElectron } from "../env";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
@@ -9,11 +10,24 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 import ThreadSidebar from "./Sidebar";
 import { Sidebar, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { CompanionPickerProvider } from "./companions/CompanionPicker";
+import { CompanionDesktopSync } from "./companions/CompanionDesktopSync";
+import { useAcknowledgeCompanionCompletion } from "./companions/useAcknowledgeCompanionCompletion";
+import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
+import type { ScopedThreadRef } from "@t3tools/contracts";
+import { useUiStateStore } from "../uiStateStore";
 
 const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
 const THREAD_SIDEBAR_MIN_WIDTH = 13 * 16;
 const THREAD_MAIN_CONTENT_MIN_WIDTH = 40 * 16;
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
+
+export function shouldNavigateToCompanionThread(
+  current: ScopedThreadRef | null,
+  target: ScopedThreadRef,
+): boolean {
+  return current === null || scopedThreadKey(current) !== scopedThreadKey(target);
+}
 
 function SidebarControl() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -55,6 +69,9 @@ function SidebarControl() {
 
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const router = useRouter();
+  const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
+  const acknowledgeCompanionCompletion = useAcknowledgeCompanionCompletion();
   const pathname = useLocation({ select: (location) => location.pathname });
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [isWindowFullscreen, setIsWindowFullscreen] = useState(() => {
@@ -105,24 +122,47 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     };
   }, [navigate, pathname]);
 
+  useEffect(() => {
+    const onNavigateThread = window.desktopBridge?.companions?.onNavigateThread;
+    if (typeof onNavigateThread !== "function") return;
+    return onNavigateThread((threadRef) => {
+      // Clicking a desktop companion is an explicit acknowledgement, including
+      // when its conversation is already the active route.
+      acknowledgeCompanionCompletion(threadRef);
+      markThreadVisited(scopedThreadKey(threadRef), new Date().toISOString());
+      const currentParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
+      const currentThreadRef = resolveThreadRouteRef(currentParams);
+      if (!shouldNavigateToCompanionThread(currentThreadRef, threadRef)) {
+        return;
+      }
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(threadRef),
+      });
+    });
+  }, [acknowledgeCompanionCompletion, markThreadVisited, navigate, router]);
+
   return (
-    <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={macosWindowControlsStyle}>
-      <Sidebar
-        side="left"
-        collapsible="offcanvas"
-        className="border-r border-border bg-card text-foreground"
-        resizable={{
-          minWidth: THREAD_SIDEBAR_MIN_WIDTH,
-          shouldAcceptWidth: ({ nextWidth, wrapper }) =>
-            wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-          storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-        }}
-      >
-        <ThreadSidebar />
-        <SidebarRail />
-      </Sidebar>
-      {children}
-      <SidebarControl />
-    </SidebarProvider>
+    <CompanionPickerProvider>
+      <CompanionDesktopSync />
+      <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={macosWindowControlsStyle}>
+        <Sidebar
+          side="left"
+          collapsible="offcanvas"
+          className="border-r border-border bg-card text-foreground"
+          resizable={{
+            minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+            shouldAcceptWidth: ({ nextWidth, wrapper }) =>
+              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+          }}
+        >
+          <ThreadSidebar />
+          <SidebarRail />
+        </Sidebar>
+        {children}
+        <SidebarControl />
+      </SidebarProvider>
+    </CompanionPickerProvider>
   );
 }

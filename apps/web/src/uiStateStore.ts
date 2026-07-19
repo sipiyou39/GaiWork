@@ -20,6 +20,7 @@ export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
   projectOrder?: string[];
   threadLastVisitedAtById?: Record<string, string>;
+  companionAcknowledgedTurnIdByThreadKey?: Record<string, string>;
   collapsedProjectCwds?: string[];
   expandedProjectCwds?: string[];
   projectOrderCwds?: string[];
@@ -34,6 +35,7 @@ export interface UiProjectState {
 
 export interface UiThreadState {
   threadLastVisitedAtById: Record<string, string>;
+  companionAcknowledgedTurnIdByThreadKey: Record<string, string>;
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
 }
 
@@ -47,6 +49,7 @@ const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
   threadLastVisitedAtById: {},
+  companionAcknowledgedTurnIdByThreadKey: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
 };
@@ -96,6 +99,18 @@ function sanitizeTimestampRecord(value: unknown): Record<string, string> {
   );
 }
 
+function sanitizeStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] =>
+        entry[0].length > 0 && typeof entry[1] === "string" && entry[1].length > 0,
+    ),
+  );
+}
+
 export function parsePersistedState(parsed: PersistedUiState): UiState {
   const projectExpandedById =
     parsed.projectExpandedById === undefined
@@ -124,6 +139,9 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     projectExpandedById,
     projectOrder,
     threadLastVisitedAtById: sanitizeTimestampRecord(parsed.threadLastVisitedAtById),
+    companionAcknowledgedTurnIdByThreadKey: sanitizeStringRecord(
+      parsed.companionAcknowledgedTurnIdByThreadKey,
+    ),
     threadChangedFilesExpandedById: sanitizePersistedThreadChangedFilesExpanded(
       parsed.threadChangedFilesExpandedById,
     ),
@@ -209,6 +227,7 @@ export function persistState(state: UiState): void {
         projectExpandedById,
         projectOrder: state.projectOrder,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
+        companionAcknowledgedTurnIdByThreadKey: state.companionAcknowledgedTurnIdByThreadKey,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpandedById,
       } satisfies PersistedUiState),
@@ -271,6 +290,38 @@ export function markThreadUnread(
       ...state.threadLastVisitedAtById,
       [threadId]: unreadVisitedAt,
     },
+  };
+}
+
+export function acknowledgeCompanionTurn(
+  state: UiState,
+  threadKey: string,
+  turnId: string,
+): UiState {
+  if (!threadKey || !turnId) {
+    return state;
+  }
+  if (state.companionAcknowledgedTurnIdByThreadKey[threadKey] === turnId) {
+    return state;
+  }
+  return {
+    ...state,
+    companionAcknowledgedTurnIdByThreadKey: {
+      ...state.companionAcknowledgedTurnIdByThreadKey,
+      [threadKey]: turnId,
+    },
+  };
+}
+
+export function clearCompanionAcknowledgement(state: UiState, threadKey: string): UiState {
+  if (!threadKey || state.companionAcknowledgedTurnIdByThreadKey[threadKey] === undefined) {
+    return state;
+  }
+  const nextAcknowledgements = { ...state.companionAcknowledgedTurnIdByThreadKey };
+  delete nextAcknowledgements[threadKey];
+  return {
+    ...state,
+    companionAcknowledgedTurnIdByThreadKey: nextAcknowledgements,
   };
 }
 
@@ -414,6 +465,8 @@ export function reorderProjects(
 interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
+  acknowledgeCompanionTurn: (threadKey: string, turnId: string) => void;
+  clearCompanionAcknowledgement: (threadKey: string) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
@@ -430,6 +483,10 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => markThreadVisited(state, threadId, visitedAt)),
   markThreadUnread: (threadId, latestTurnCompletedAt) =>
     set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt)),
+  acknowledgeCompanionTurn: (threadKey, turnId) =>
+    set((state) => acknowledgeCompanionTurn(state, threadKey, turnId)),
+  clearCompanionAcknowledgement: (threadKey) =>
+    set((state) => clearCompanionAcknowledgement(state, threadKey)),
   setThreadChangedFilesExpanded: (threadId, turnId, expanded) =>
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
   setDefaultAdvertisedEndpointKey: (key) =>

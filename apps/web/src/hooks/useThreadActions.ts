@@ -1,9 +1,11 @@
 import {
   parseScopedThreadKey,
+  scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { removeCompanionAssignment } from "@t3tools/client-runtime/companions";
 import { EnvironmentId, type ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
@@ -21,10 +23,11 @@ import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsStat
 import { readLocalApi } from "../localApi";
 import { readEnvironmentThreadRefs, readProject, readThreadShell } from "../state/entities";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useUiStateStore } from "../uiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
-import { useClientSettings } from "./useSettings";
+import { getClientSettings, useClientSettings, useCommitClientSettings } from "./useSettings";
 import { useAtomCommand } from "../state/use-atom-command";
 
 export class ThreadArchiveBlockedError extends Schema.TaggedErrorClass<ThreadArchiveBlockedError>()(
@@ -59,11 +62,15 @@ export function useThreadActions() {
   });
   const sidebarThreadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
+  const commitClientSettings = useCommitClientSettings();
   const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearDraftThread);
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
   );
   const clearTerminalUiState = useTerminalUiStateStore((state) => state.clearTerminalUiState);
+  const clearCompanionAcknowledgement = useUiStateStore(
+    (state) => state.clearCompanionAcknowledgement,
+  );
   const router = useRouter();
   const handleNewThread = useNewThreadHandler();
   // Keep a ref so archiveThread can call handleNewThread without appearing in
@@ -72,6 +79,28 @@ export function useThreadActions() {
   // sidebar row via archiveThread → attemptArchiveThread.
   const handleNewThreadRef = useRef(handleNewThread);
   handleNewThreadRef.current = handleNewThread;
+
+  const releaseCompanion = useCallback(
+    async (threadRef: ScopedThreadRef) => {
+      clearCompanionAcknowledgement(scopedThreadKey(threadRef));
+      const current = getClientSettings().companionAssignments;
+      const next = removeCompanionAssignment(current, threadRef);
+      if (next.length === current.length) return;
+      try {
+        await commitClientSettings({ companionAssignments: next });
+      } catch (error) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Conversation changed, but its companion could not be released",
+            description:
+              error instanceof Error ? error.message : "The local setting could not be saved.",
+          }),
+        );
+      }
+    },
+    [clearCompanionAcknowledgement, commitClientSettings],
+  );
 
   const resolveThreadTarget = useCallback((target: ScopedThreadRef) => {
     const thread = readThreadShell(target);
@@ -115,6 +144,7 @@ export function useThreadActions() {
       if (archiveResult._tag === "Failure") {
         return archiveResult;
       }
+      await releaseCompanion(threadRef);
 
       if (shouldNavigateToDraft) {
         const navigationResult = await settlePromise(() =>
@@ -130,7 +160,7 @@ export function useThreadActions() {
       refreshArchivedThreadsForEnvironment(threadRef.environmentId);
       return archiveResult;
     },
-    [archiveThreadMutation, getCurrentRouteThreadRef, resolveThreadTarget],
+    [archiveThreadMutation, getCurrentRouteThreadRef, releaseCompanion, resolveThreadTarget],
   );
 
   const unarchiveThread = useCallback(
@@ -158,6 +188,7 @@ export function useThreadActions() {
         });
         if (result._tag === "Success") {
           refreshArchivedThreadsForEnvironment(target.environmentId);
+          await releaseCompanion(target);
         }
         return result;
       }
@@ -240,6 +271,7 @@ export function useThreadActions() {
       if (deleteResult._tag === "Failure") {
         return deleteResult;
       }
+      await releaseCompanion(threadRef);
       refreshArchivedThreadsForEnvironment(threadRef.environmentId);
       clearComposerDraftForThread(threadRef);
       clearProjectDraftThreadById(
@@ -338,6 +370,7 @@ export function useThreadActions() {
       getCurrentRouteThreadRef,
       refreshVcsStatus,
       removeWorktree,
+      releaseCompanion,
       router,
       resolveThreadTarget,
       sidebarThreadSortOrder,

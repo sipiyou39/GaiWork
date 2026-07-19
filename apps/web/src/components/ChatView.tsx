@@ -111,6 +111,10 @@ import {
   type TurnDiffSummary,
 } from "../types";
 import { useTheme } from "../hooks/useTheme";
+import {
+  isMainWindowAttentive,
+  useMainWindowAttentionState,
+} from "../hooks/useMainWindowAttentionState";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteContext";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
@@ -207,6 +211,7 @@ import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
+import { useAcknowledgeCompanionCompletion } from "./companions/useAcknowledgeCompanionCompletion";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -1133,10 +1138,15 @@ function ChatViewContent(props: ChatViewProps) {
   const composerDraftTarget: ScopedThreadRef | DraftId =
     routeKind === "server" ? routeThreadRef : props.draftId;
   const serverThread = useThread(routeThreadRef);
+  const mainWindowAttention = useMainWindowAttentionState();
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
+  const acknowledgeCompanionCompletion = useAcknowledgeCompanionCompletion();
   const activeThreadLastVisitedAt = useUiStateStore(
     (store) => store.threadLastVisitedAtById[routeThreadKey],
   );
+  const acknowledgeActiveCompanionCompletion = useCallback(() => {
+    acknowledgeCompanionCompletion(routeThreadRef);
+  }, [acknowledgeCompanionCompletion, routeThreadRef]);
   const settings = useEnvironmentSettings(environmentId);
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
@@ -1734,6 +1744,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
 
   useEffect(() => {
+    if (!isMainWindowAttentive(mainWindowAttention)) return;
     if (!serverThread?.id) return;
     const threadUpdatedAt = Date.parse(serverThread.updatedAt);
     if (Number.isNaN(threadUpdatedAt)) return;
@@ -1746,6 +1757,7 @@ function ChatViewContent(props: ChatViewProps) {
     );
   }, [
     activeThreadLastVisitedAt,
+    mainWindowAttention,
     markThreadVisited,
     serverThread?.environmentId,
     serverThread?.id,
@@ -4044,6 +4056,7 @@ function ChatViewContent(props: ChatViewProps) {
       sendInFlightRef.current
     )
       return;
+    acknowledgeActiveCompanionCompletion();
     if (activePendingProgress) {
       onAdvanceActivePendingUserInput();
       return;
@@ -5207,6 +5220,8 @@ function ChatViewContent(props: ChatViewProps) {
           rightPanelMaximized ? "w-0 flex-none" : "flex-1",
         )}
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
+        onPointerDownCapture={acknowledgeActiveCompanionCompletion}
+        onKeyDownCapture={acknowledgeActiveCompanionCompletion}
       >
         {/* Top bar */}
         <header

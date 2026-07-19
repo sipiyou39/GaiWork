@@ -741,7 +741,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           }
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
-            latestTurnId: event.payload.session.activeTurnId,
+            // `activeTurnId` describes the currently running turn, while
+            // `latestTurnId` is the durable pointer used by thread shells to
+            // expose the most recent result. A ready session has no active
+            // turn, but must keep pointing at the turn that just completed.
+            latestTurnId: event.payload.session.activeTurnId ?? existingRow.value.latestTurnId,
             updatedAt: event.occurredAt,
           });
           yield* refreshThreadShellSummary(event.payload.threadId);

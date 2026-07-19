@@ -2,6 +2,8 @@ import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  acknowledgeCompanionTurn,
+  clearCompanionAcknowledgement,
   legacyProjectCwdPreferenceKey,
   markThreadUnread,
   markThreadVisited,
@@ -22,6 +24,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectExpandedById: {},
     projectOrder: [],
     threadLastVisitedAtById: {},
+    companionAcknowledgedTurnIdByThreadKey: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
     ...overrides,
@@ -51,6 +54,23 @@ describe("uiStateStore pure functions", () => {
 
     expect(next.threadLastVisitedAtById[threadId]).toBe("2026-02-25T12:29:59.999Z");
     expect(markThreadUnread(next, threadId, null)).toBe(next);
+  });
+
+  it("acknowledges a companion completion by immutable turn id", () => {
+    const threadKey = "environment:thread-1";
+    const initialState = makeUiState();
+
+    const acknowledged = acknowledgeCompanionTurn(initialState, threadKey, "turn-1");
+
+    expect(acknowledged.companionAcknowledgedTurnIdByThreadKey).toEqual({
+      [threadKey]: "turn-1",
+    });
+    expect(acknowledgeCompanionTurn(acknowledged, threadKey, "turn-1")).toBe(acknowledged);
+    expect(acknowledgeCompanionTurn(acknowledged, "", "turn-2")).toBe(acknowledged);
+
+    const cleared = clearCompanionAcknowledgement(acknowledged, threadKey);
+    expect(cleared.companionAcknowledgedTurnIdByThreadKey).toEqual({});
+    expect(clearCompanionAcknowledgement(cleared, threadKey)).toBe(cleared);
   });
 
   it("resolves project expansion from logical, physical, and legacy preference keys", () => {
@@ -154,6 +174,11 @@ describe("parsePersistedState", () => {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
         invalid: "not-a-date",
       },
+      companionAcknowledgedTurnIdByThreadKey: {
+        "environment:thread-1": "turn-1",
+        empty: "",
+        invalid: 42 as unknown as string,
+      },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
@@ -170,6 +195,9 @@ describe("parsePersistedState", () => {
       projectOrder: ["physical-b", "physical-a"],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
+      },
+      companionAcknowledgedTurnIdByThreadKey: {
+        "environment:thread-1": "turn-1",
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       threadChangedFilesExpandedById: {
@@ -255,6 +283,9 @@ describe("uiStateStore persistence", () => {
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
+      companionAcknowledgedTurnIdByThreadKey: {
+        "environment:thread-1": "turn-1",
+      },
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -276,6 +307,9 @@ describe("uiStateStore persistence", () => {
       projectOrder: ["physical-b", "physical-a"],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
+      },
+      companionAcknowledgedTurnIdByThreadKey: {
+        "environment:thread-1": "turn-1",
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       threadChangedFilesExpandedById: {

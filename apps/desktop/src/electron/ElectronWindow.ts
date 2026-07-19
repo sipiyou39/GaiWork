@@ -8,6 +8,22 @@ import * as Schema from "effect/Schema";
 
 import * as Electron from "electron";
 
+const appearanceSyncExcludedWindows = new WeakSet<Electron.BrowserWindow>();
+const mainFallbackExcludedWindows = new WeakSet<Electron.BrowserWindow>();
+
+/**
+ * Transparent utility windows own their background presentation and must not
+ * inherit the opaque main-window color when the system theme changes.
+ */
+export function excludeWindowFromAppearanceSync(window: Electron.BrowserWindow): void {
+  appearanceSyncExcludedWindows.add(window);
+}
+
+/** Prevent a utility window from being mistaken for the main application window. */
+export function excludeWindowFromMainFallback(window: Electron.BrowserWindow): void {
+  mainFallbackExcludedWindows.add(window);
+}
+
 const ElectronWindowCreateOptions = Schema.Struct({
   title: Schema.NullOr(Schema.String),
   width: Schema.NullOr(Schema.Number),
@@ -137,11 +153,13 @@ export const make = Effect.gen(function* () {
       return main;
     }
 
-    const first = Option.fromNullishOr((yield* listWindows)[0] ?? null);
-    if (Option.isNone(first) || (yield* isWindowDestroyed(first.value))) {
-      return Option.none<Electron.BrowserWindow>();
+    for (const window of yield* listWindows) {
+      if (mainFallbackExcludedWindows.has(window) || (yield* isWindowDestroyed(window))) {
+        continue;
+      }
+      return Option.some(window);
     }
-    return first;
+    return Option.none<Electron.BrowserWindow>();
   });
 
   const focusedMainOrFirst = Effect.gen(function* () {
@@ -156,7 +174,11 @@ export const make = Effect.gen(function* () {
           cause,
         }),
     }).pipe(Effect.orDie);
-    if (Option.isSome(focused) && !(yield* isWindowDestroyed(focused.value))) {
+    if (
+      Option.isSome(focused) &&
+      !mainFallbackExcludedWindows.has(focused.value) &&
+      !(yield* isWindowDestroyed(focused.value))
+    ) {
       return focused;
     }
     return yield* currentMainOrFirst;
@@ -274,7 +296,7 @@ export const make = Effect.gen(function* () {
     ) {
       const windows = yield* listWindows;
       for (const window of windows) {
-        if (yield* isWindowDestroyed(window)) {
+        if (appearanceSyncExcludedWindows.has(window) || (yield* isWindowDestroyed(window))) {
           continue;
         }
         yield* sync(window);

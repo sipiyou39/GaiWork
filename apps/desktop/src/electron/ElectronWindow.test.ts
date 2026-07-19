@@ -3,6 +3,7 @@ import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import type * as Electron from "electron";
 import { beforeEach, vi } from "vite-plus/test";
 
@@ -124,6 +125,39 @@ describe("ElectronWindow", () => {
       );
 
       assert.deepEqual(syncedWindows, [liveWindow]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("does not apply main-window appearance to excluded transparent windows", () =>
+    Effect.gen(function* () {
+      const mainWindow = makeBrowserWindow({ id: 3, destroyed: false });
+      const transparentWindow = makeBrowserWindow({ id: 4, destroyed: false });
+      ElectronWindow.excludeWindowFromAppearanceSync(transparentWindow);
+      getAllWindowsMock.mockReturnValue([mainWindow, transparentWindow]);
+
+      const syncedWindows: Electron.BrowserWindow[] = [];
+      const electronWindow = yield* ElectronWindow.ElectronWindow;
+      yield* electronWindow.syncAllAppearance((window) =>
+        Effect.sync(() => {
+          syncedWindows.push(window);
+        }),
+      );
+
+      assert.deepEqual(syncedWindows, [mainWindow]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("never treats an excluded utility window as the main fallback", () =>
+    Effect.gen(function* () {
+      const utilityWindow = makeBrowserWindow({ id: 5, destroyed: false });
+      const applicationWindow = makeBrowserWindow({ id: 6, destroyed: false });
+      ElectronWindow.excludeWindowFromMainFallback(utilityWindow);
+      getAllWindowsMock.mockReturnValue([utilityWindow, applicationWindow]);
+      getFocusedWindowMock.mockReturnValue(utilityWindow);
+
+      const electronWindow = yield* ElectronWindow.ElectronWindow;
+      assert.deepEqual(yield* electronWindow.currentMainOrFirst, Option.some(applicationWindow));
+      assert.deepEqual(yield* electronWindow.focusedMainOrFirst, Option.some(applicationWindow));
     }).pipe(Effect.provide(TestLayer)),
   );
 

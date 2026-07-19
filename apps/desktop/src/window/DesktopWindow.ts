@@ -6,6 +6,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 
 import type * as Electron from "electron";
+import type { ScopedThreadRef } from "@t3tools/contracts";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -15,7 +16,11 @@ import { getDesktopUrl } from "../electron/ElectronProtocol.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { MENU_ACTION_CHANNEL, WINDOW_FULLSCREEN_STATE_CHANNEL } from "../ipc/channels.ts";
+import {
+  COMPANION_NAVIGATE_THREAD_CHANNEL,
+  MENU_ACTION_CHANNEL,
+  WINDOW_FULLSCREEN_STATE_CHANNEL,
+} from "../ipc/channels.ts";
 import * as PreviewManager from "../preview/Manager.ts";
 
 const TITLEBAR_HEIGHT = 40;
@@ -76,6 +81,9 @@ export class DesktopWindow extends Context.Service<
     // produce a stranded window pointing at nothing.
     readonly handleBackendNotReady: Effect.Effect<void>;
     readonly dispatchMenuAction: (action: string) => Effect.Effect<void, DesktopWindowError>;
+    readonly navigateToThread: (
+      threadRef: ScopedThreadRef,
+    ) => Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly syncAppearance: Effect.Effect<void>;
   }
 >()("@t3tools/desktop/window/DesktopWindow") {}
@@ -211,9 +219,26 @@ export const make = Effect.gen(function* () {
   // The transient "Connecting to WSL" splash window, tracked separately so it
   // is never mistaken for the real main window.
   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+  const pendingNavigationRef = yield* Ref.make<Option.Option<ScopedThreadRef>>(Option.none());
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
+  const navigationLoadListeners = new WeakSet<Electron.WebContents>();
+
+  const flushPendingNavigation = (window: Electron.BrowserWindow) =>
+    Ref.getAndSet(pendingNavigationRef, Option.none()).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.void,
+          onSome: (threadRef) =>
+            Effect.sync(() => {
+              if (!window.isDestroyed()) {
+                window.webContents.send(COMPANION_NAVIGATE_THREAD_CHANNEL, threadRef);
+              }
+            }),
+        }),
+      ),
+    );
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
@@ -268,6 +293,7 @@ export const make = Effect.gen(function* () {
         nodeIntegration: false,
         sandbox: true,
         webviewTag: true,
+        backgroundThrottling: false,
       },
     });
 
@@ -429,6 +455,7 @@ export const make = Effect.gen(function* () {
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
       window.setTitle(environment.displayName);
+      void runPromise(flushPendingNavigation(window));
     });
     window.webContents.on(
       "did-fail-load",
@@ -463,6 +490,10 @@ export const make = Effect.gen(function* () {
           exitCode: details.exitCode,
         }),
       );
+      void runPromise(electronWindow.clearMain(Option.some(window)));
+      if (!window.isDestroyed()) {
+        window.destroy();
+      }
     });
 
     const revealSubscribers: RevealSubscription[] = [(fire) => window.once("ready-to-show", fire)];
@@ -618,6 +649,25 @@ export const make = Effect.gen(function* () {
       }
 
       send();
+    }),
+    navigateToThread: Effect.fn("desktop.window.navigateToThread")(function* (threadRef) {
+      yield* Ref.set(pendingNavigationRef, Option.some(threadRef));
+      const targetWindow = yield* ensureMain;
+      yield* electronWindow.reveal(targetWindow);
+
+      if (targetWindow.webContents.isLoadingMainFrame()) {
+        if (!navigationLoadListeners.has(targetWindow.webContents)) {
+          navigationLoadListeners.add(targetWindow.webContents);
+          targetWindow.webContents.once("did-finish-load", () => {
+            navigationLoadListeners.delete(targetWindow.webContents);
+            void runPromise(flushPendingNavigation(targetWindow));
+          });
+        }
+        return targetWindow;
+      }
+
+      yield* flushPendingNavigation(targetWindow);
+      return targetWindow;
     }),
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;

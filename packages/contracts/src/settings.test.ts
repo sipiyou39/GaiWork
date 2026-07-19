@@ -31,6 +31,23 @@ describe("ClientSettings word wrap", () => {
   });
 });
 
+describe("ClientSettings companions", () => {
+  it("defaults legacy documents to safe companion preferences", () => {
+    const settings = decodeClientSettings({});
+
+    expect(settings.companionAssignments).toEqual([]);
+    expect(settings.companionDesktopEnabled).toBe(true);
+    expect(settings.companionDesktopScalePercent).toBe(100);
+    expect(settings.companionShowOnDesktopByDefault).toBe(true);
+    expect(settings.companionSidebarScalePercent).toBe(100);
+  });
+
+  it("rejects unsupported companion sizes", () => {
+    expect(() => decodeClientSettings({ companionDesktopScalePercent: 49 })).toThrow();
+    expect(() => decodeClientSettings({ companionSidebarScalePercent: 151 })).toThrow();
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});

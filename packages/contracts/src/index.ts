@@ -1,4 +1,5 @@
 export * from "./baseSchemas.ts";
+export * from "./companions.ts";
 export * from "./auth.ts";
 export * from "./environment.ts";
 export * from "./environmentHttp.ts";

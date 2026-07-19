@@ -8,6 +8,7 @@ import {
   resolveDevProtocolClient,
   resolveElectronLaunchCommand,
 } from "./electron-launcher.mjs";
+import { createSafeOutputRelay } from "./safe-output-relay.mjs";
 import { waitForResources } from "./wait-for-resources.mjs";
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim();
@@ -24,10 +25,14 @@ if (!Number.isInteger(port) || port <= 0) {
 const requiredFiles = [
   "dist-electron/main.cjs",
   "dist-electron/preload.cjs",
+  "dist-electron/companion-preload.cjs",
   "../server/dist/bin.mjs",
 ];
 const watchedDirectories = [
-  { directory: "dist-electron", files: new Set(["main.cjs", "preload.cjs"]) },
+  {
+    directory: "dist-electron",
+    files: new Set(["main.cjs", "preload.cjs", "companion-preload.cjs"]),
+  },
   { directory: "../server/dist", files: new Set(["bin.mjs"]) },
 ];
 const forcedShutdownTimeoutMs = 1_500;
@@ -58,6 +63,8 @@ let currentApp = null;
 let restartQueue = Promise.resolve();
 const expectedExits = new WeakSet();
 const watchers = [];
+const stdoutRelay = createSafeOutputRelay(process.stdout);
+const stderrRelay = createSafeOutputRelay(process.stderr);
 
 function killChildTreeByPid(pid, signal) {
   if (hostPlatform === "win32" || typeof pid !== "number") {
@@ -92,12 +99,19 @@ function startApp() {
   const app = NodeChildProcess.spawn(electronCommand.electronPath, electronCommand.args, {
     cwd: desktopDir,
     env: childEnv,
-    stdio: "inherit",
+    stdio: ["inherit", "pipe", "pipe"],
   });
+  const disconnectStdout = stdoutRelay.connect(app.stdout);
+  const disconnectStderr = stderrRelay.connect(app.stderr);
+  const disconnectOutput = () => {
+    disconnectStdout();
+    disconnectStderr();
+  };
 
   currentApp = app;
 
   app.once("error", () => {
+    disconnectOutput();
     if (currentApp === app) {
       currentApp = null;
     }
@@ -108,6 +122,7 @@ function startApp() {
   });
 
   app.once("exit", (code, signal) => {
+    disconnectOutput();
     if (currentApp === app) {
       currentApp = null;
     }
@@ -221,6 +236,8 @@ async function shutdown(exitCode) {
   for (const watcher of watchers) {
     watcher.close();
   }
+  stdoutRelay.dispose();
+  stderrRelay.dispose();
 
   await stopApp();
   killChildTree("TERM");

@@ -24,6 +24,7 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import { normalizeCompanionAssignments } from "@t3tools/client-runtime/companions";
 import { ensureLocalApi } from "~/localApi";
 import * as Struct from "effect/Struct";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
@@ -38,6 +39,8 @@ let clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
 let clientSettingsHydrated = false;
 let clientSettingsHydrationPromise: Promise<void> | null = null;
 let clientSettingsHydrationGeneration = 0;
+let clientSettingsPersistenceQueue: Promise<void> = Promise.resolve();
+let lastPersistedClientSettings = DEFAULT_CLIENT_SETTINGS;
 
 function emitClientSettingsChange() {
   for (const listener of clientSettingsListeners) {
@@ -104,7 +107,22 @@ async function hydrateClientSettings(): Promise<void> {
         return;
       }
       if (persistedSettings) {
-        replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
+        const assignments = normalizeCompanionAssignments(persistedSettings.companionAssignments);
+        if (assignments.length !== persistedSettings.companionAssignments.length) {
+          console.warn(
+            `${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} removed duplicate companion assignments`,
+            {
+              removed: persistedSettings.companionAssignments.length - assignments.length,
+            },
+          );
+        }
+        const normalizedSettings = {
+          ...DEFAULT_CLIENT_SETTINGS,
+          ...persistedSettings,
+          companionAssignments: assignments,
+        };
+        lastPersistedClientSettings = normalizedSettings;
+        replaceClientSettingsSnapshot(normalizedSettings);
       }
     } catch (error) {
       console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} hydrate failed`, {
@@ -128,16 +146,38 @@ async function hydrateClientSettings(): Promise<void> {
   return clientSettingsHydrationPromise;
 }
 
-function persistClientSettings(settings: ClientSettings): void {
+function enqueueClientSettingsPersistence(settings: ClientSettings): Promise<void> {
   replaceClientSettingsSnapshot(settings);
-  void ensureLocalApi()
-    .persistence.setClientSettings(settings)
-    .catch((error) => {
-      console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} persist failed`, {
-        operation: "persist",
-        ...safeErrorLogAttributes(error),
-      });
+  const write = clientSettingsPersistenceQueue
+    .catch(() => undefined)
+    .then(async () => {
+      await ensureLocalApi().persistence.setClientSettings(settings);
+      lastPersistedClientSettings = settings;
     });
+  clientSettingsPersistenceQueue = write.catch(() => undefined);
+  return write;
+}
+
+function persistClientSettings(settings: ClientSettings): void {
+  void enqueueClientSettingsPersistence(settings).catch((error) => {
+    console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} persist failed`, {
+      operation: "persist",
+      ...safeErrorLogAttributes(error),
+    });
+  });
+}
+
+export async function commitClientSettingsPatch(patch: ClientSettingsPatch): Promise<void> {
+  await hydrateClientSettings();
+  const next = { ...getClientSettingsSnapshot(), ...patch };
+  try {
+    await enqueueClientSettingsPersistence(next);
+  } catch (error) {
+    if (getClientSettingsSnapshot() === next) {
+      replaceClientSettingsSnapshot(lastPersistedClientSettings);
+    }
+    throw error;
+  }
 }
 
 // ── Key sets for routing patches ─────────────────────────────────────
@@ -288,11 +328,17 @@ export function useUpdateClientSettings() {
   }, []);
 }
 
+export function useCommitClientSettings() {
+  return useCallback((patch: ClientSettingsPatch) => commitClientSettingsPatch(patch), []);
+}
+
 export function __resetClientSettingsPersistenceForTests(): void {
   clientSettingsHydrationGeneration += 1;
   clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
   clientSettingsHydrated = false;
   clientSettingsHydrationPromise = null;
+  clientSettingsPersistenceQueue = Promise.resolve();
+  lastPersistedClientSettings = DEFAULT_CLIENT_SETTINGS;
   clientSettingsListeners.clear();
   clientSettingsHydrationListeners.clear();
 }

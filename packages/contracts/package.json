@@ -15,6 +15,10 @@
       "types": "./src/settings.ts",
       "import": "./src/settings.ts"
     },
+    "./companions": {
+      "types": "./src/companions.ts",
+      "import": "./src/companions.ts"
+    },
     "./relay": {
       "types": "./src/relay.ts",
       "import": "./src/relay.ts"

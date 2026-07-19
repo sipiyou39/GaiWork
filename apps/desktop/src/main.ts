@@ -52,6 +52,8 @@ import * as PreviewManager from "./preview/Manager.ts";
 import * as DesktopWindow from "./window/DesktopWindow.ts";
 import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
+import * as DesktopCompanionManager from "./companions/DesktopCompanionManager.ts";
+import * as DesktopCompanionPositions from "./companions/DesktopCompanionPositions.ts";
 
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
@@ -121,6 +123,7 @@ const desktopFoundationLayer = Layer.mergeAll(
   DesktopShutdown.layer,
   DesktopAppSettings.layer,
   DesktopClientSettings.layer,
+  DesktopCompanionPositions.layer,
   DesktopConnectionCatalogStore.layer.pipe(Layer.provideMerge(DesktopSavedEnvironments.layer)),
   DesktopAssets.layer,
   DesktopObservability.layer,
@@ -143,6 +146,11 @@ const desktopPreviewLayer = PreviewManager.layer.pipe(
 const desktopWindowLayer = DesktopWindow.layer.pipe(
   Layer.provideMerge(desktopServerExposureLayer),
   Layer.provideMerge(desktopPreviewLayer),
+);
+
+const desktopCompanionLayer = DesktopCompanionManager.layer.pipe(
+  Layer.provideMerge(desktopWindowLayer),
+  Layer.provideMerge(desktopFoundationLayer),
 );
 
 // Pool layer instantiates the backend factory once for the Windows
@@ -174,6 +182,7 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopShellEnvironment.layer,
   desktopSshLayer,
 ).pipe(
+  Layer.provideMerge(desktopCompanionLayer),
   Layer.provideMerge(DesktopUpdates.layer),
   Layer.provideMerge(desktopWslBackendLayer),
   Layer.provideMerge(desktopLocalEnvironmentAuthLayer),

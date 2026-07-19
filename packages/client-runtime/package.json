@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./companions": {
+      "types": "./src/companions/index.ts",
+      "default": "./src/companions/index.ts"
+    },
     "./connection": {
       "types": "./src/connection/index.ts",
       "default": "./src/connection/index.ts"

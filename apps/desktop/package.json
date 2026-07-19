@@ -9,6 +9,7 @@
     "start": "node scripts/start-electron.mjs",
     "typecheck": "tsgo --noEmit",
     "test": "vp test run --passWithNoTests",
+    "performance-test:companions": "node scripts/companion-performance-smoke.mjs",
     "smoke-test": "node scripts/smoke-test.mjs"
   },
   "dependencies": {

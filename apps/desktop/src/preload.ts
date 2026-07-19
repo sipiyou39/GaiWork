@@ -11,6 +11,25 @@ import * as IpcChannels from "./ipc/channels.ts";
 
 exposeClerkBridge({ passkeys: true });
 
+type CompanionNavigateListener = Parameters<
+  NonNullable<NonNullable<DesktopBridge["companions"]>["onNavigateThread"]>
+>[0];
+
+const companionNavigateListeners = new Set<CompanionNavigateListener>();
+let pendingCompanionNavigation: Parameters<CompanionNavigateListener>[0] | null = null;
+
+// Register during preload so navigation sent immediately after a recreated
+// renderer finishes loading cannot be lost before React mounts its listener.
+ipcRenderer.on(IpcChannels.COMPANION_NAVIGATE_THREAD_CHANNEL, (_event, threadRef: unknown) => {
+  if (typeof threadRef !== "object" || threadRef === null) return;
+  const target = threadRef as Parameters<CompanionNavigateListener>[0];
+  if (companionNavigateListeners.size === 0) {
+    pendingCompanionNavigation = target;
+    return;
+  }
+  for (const listener of companionNavigateListeners) listener(target);
+});
+
 function unwrapEnsureSshEnvironmentResult(result: unknown) {
   if (
     typeof result === "object" &&
@@ -129,6 +148,23 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.WINDOW_FULLSCREEN_STATE_CHANNEL, wrappedListener);
     };
   },
+  getMainWindowAttentionState: () => {
+    const result = ipcRenderer.sendSync(IpcChannels.GET_MAIN_WINDOW_ATTENTION_STATE_CHANNEL);
+    if (typeof result !== "object" || result === null) {
+      return { visible: true, focused: true, minimized: false };
+    }
+    return result as ReturnType<NonNullable<DesktopBridge["getMainWindowAttentionState"]>>;
+  },
+  onMainWindowAttentionStateChange: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
+      if (typeof state !== "object" || state === null) return;
+      listener(state as Parameters<typeof listener>[0]);
+    };
+    ipcRenderer.on(IpcChannels.MAIN_WINDOW_ATTENTION_STATE_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.MAIN_WINDOW_ATTENTION_STATE_CHANNEL, wrappedListener);
+    };
+  },
   getUpdateState: () => ipcRenderer.invoke(IpcChannels.UPDATE_GET_STATE_CHANNEL),
   setUpdateChannel: (channel) =>
     ipcRenderer.invoke(IpcChannels.UPDATE_SET_CHANNEL_CHANNEL, channel),
@@ -145,6 +181,24 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return () => {
       ipcRenderer.removeListener(IpcChannels.UPDATE_STATE_CHANNEL, wrappedListener);
     };
+  },
+  companions: {
+    syncProjection: (snapshot) =>
+      ipcRenderer.invoke(IpcChannels.COMPANION_SYNC_PROJECTION_CHANNEL, snapshot),
+    resetPositions: () => ipcRenderer.invoke(IpcChannels.COMPANION_RESET_POSITIONS_CHANNEL),
+    onNavigateThread: (listener) => {
+      companionNavigateListeners.add(listener);
+      const pending = pendingCompanionNavigation;
+      pendingCompanionNavigation = null;
+      if (pending) {
+        queueMicrotask(() => {
+          if (companionNavigateListeners.has(listener)) listener(pending);
+        });
+      }
+      return () => {
+        companionNavigateListeners.delete(listener);
+      };
+    },
   },
   preview: {
     createTab: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_CREATE_TAB_CHANNEL, { tabId }),

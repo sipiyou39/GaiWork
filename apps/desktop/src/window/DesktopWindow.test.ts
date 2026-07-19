@@ -8,6 +8,8 @@ import * as TestClock from "effect/testing/TestClock";
 
 import type * as Electron from "electron";
 import { vi } from "vite-plus/test";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 
 vi.mock("electron", async (importOriginal) => ({
   ...(await importOriginal<typeof import("electron")>()),
@@ -28,7 +30,11 @@ import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { MENU_ACTION_CHANNEL, WINDOW_FULLSCREEN_STATE_CHANNEL } from "../ipc/channels.ts";
+import {
+  COMPANION_NAVIGATE_THREAD_CHANNEL,
+  MENU_ACTION_CHANNEL,
+  WINDOW_FULLSCREEN_STATE_CHANNEL,
+} from "../ipc/channels.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 import * as PreviewManager from "../preview/Manager.ts";
@@ -369,6 +375,35 @@ describe("DesktopWindow", () => {
         assert.deepEqual(fakeWindow.send.mock.calls, [
           [WINDOW_FULLSCREEN_STATE_CHANNEL, true],
           [WINDOW_FULLSCREEN_STATE_CHANNEL, false],
+        ]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("switches companion targets inside the existing main webContents", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({ window: fakeWindow.window, createCount, mainWindow });
+      const environmentId = EnvironmentId.make("environment-test");
+      const first = scopeThreadRef(environmentId, ThreadId.make("thread-first"));
+      const second = scopeThreadRef(environmentId, ThreadId.make("thread-second"));
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+        const originalWindow = Option.getOrThrow(yield* Ref.get(mainWindow));
+
+        yield* desktopWindow.navigateToThread(first);
+        yield* desktopWindow.navigateToThread(second);
+
+        assert.equal(yield* Ref.get(createCount), 1);
+        assert.equal(Option.getOrThrow(yield* Ref.get(mainWindow)), originalWindow);
+        assert.deepEqual(fakeWindow.loadURL.mock.calls, [["gaiwork-dev://app/"]]);
+        assert.deepEqual(fakeWindow.send.mock.calls, [
+          [COMPANION_NAVIGATE_THREAD_CHANNEL, first],
+          [COMPANION_NAVIGATE_THREAD_CHANNEL, second],
         ]);
       }).pipe(Effect.provide(layer));
     }),

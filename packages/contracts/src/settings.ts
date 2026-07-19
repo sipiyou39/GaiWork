@@ -3,6 +3,13 @@ import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import {
+  CompanionAssignment,
+  CompanionDesktopScalePercent,
+  CompanionSidebarScalePercent,
+  DEFAULT_COMPANION_DESKTOP_SCALE_PERCENT,
+  DEFAULT_COMPANION_SIDEBAR_SCALE_PERCENT,
+} from "./companions.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
@@ -41,6 +48,19 @@ export const DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT: SidebarThreadPreviewCount = 6
 
 export const ClientSettingsSchema = Schema.Struct({
   autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  companionAssignments: Schema.Array(CompanionAssignment).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  companionDesktopEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  companionDesktopScalePercent: CompanionDesktopScalePercent.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPANION_DESKTOP_SCALE_PERCENT)),
+  ),
+  companionShowOnDesktopByDefault: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  companionSidebarScalePercent: CompanionSidebarScalePercent.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPANION_SIDEBAR_SCALE_PERCENT)),
+  ),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
@@ -535,6 +555,11 @@ export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
   autoOpenPlanSidebar: Schema.optionalKey(Schema.Boolean),
+  companionAssignments: Schema.optionalKey(Schema.Array(CompanionAssignment)),
+  companionDesktopEnabled: Schema.optionalKey(Schema.Boolean),
+  companionDesktopScalePercent: Schema.optionalKey(CompanionDesktopScalePercent),
+  companionShowOnDesktopByDefault: Schema.optionalKey(Schema.Boolean),
+  companionSidebarScalePercent: Schema.optionalKey(CompanionSidebarScalePercent),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),

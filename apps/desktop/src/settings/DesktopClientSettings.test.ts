@@ -14,6 +14,11 @@ import * as DesktopClientSettings from "./DesktopClientSettings.ts";
 
 const clientSettings: ClientSettings = {
   autoOpenPlanSidebar: false,
+  companionAssignments: [],
+  companionDesktopEnabled: true,
+  companionDesktopScalePercent: 125,
+  companionShowOnDesktopByDefault: false,
+  companionSidebarScalePercent: 110,
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   dismissedProviderUpdateNotificationKeys: [],

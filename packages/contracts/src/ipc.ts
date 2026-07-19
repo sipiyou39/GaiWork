@@ -101,7 +101,13 @@ import { EnvironmentId } from "./baseSchemas.ts";
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { EditorId } from "./editor.ts";
-import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import { ExecutionEnvironmentDescriptor, type ScopedThreadRef } from "./environment.ts";
+import type {
+  CompanionPointerEvent,
+  CompanionProjectionSnapshot,
+  DesktopCompanionOverlayPresentation,
+  MainWindowAttentionState,
+} from "./companions.ts";
 import type { ClientSettings, ServerSettings, ServerSettingsPatch } from "./settings.ts";
 import type {
   SourceControlCloneRepositoryInput,
@@ -956,6 +962,21 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
   input: PreviewAutomationWaitForInput,
 });
 
+export interface DesktopCompanionsBridge {
+  syncProjection: (snapshot: CompanionProjectionSnapshot) => Promise<void>;
+  resetPositions: () => Promise<void>;
+  onNavigateThread: (listener: (threadRef: ScopedThreadRef) => void) => () => void;
+}
+
+/** Minimal bridge exposed only inside a desktop companion window. */
+export interface DesktopCompanionWindowBridge {
+  getInitialProjection: () => DesktopCompanionOverlayPresentation | null;
+  onProjection: (listener: (projection: DesktopCompanionOverlayPresentation) => void) => () => void;
+  notifyReady: () => void;
+  setInteractive: (interactive: boolean) => Promise<void>;
+  sendPointerEvent: (event: CompanionPointerEvent) => Promise<void>;
+}
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   // One bootstrap per pool instance currently registered with bootstrap
@@ -1008,6 +1029,10 @@ export interface DesktopBridge {
   onMenuAction: (listener: (action: string) => void) => () => void;
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
+  getMainWindowAttentionState?: () => MainWindowAttentionState;
+  onMainWindowAttentionStateChange?: (
+    listener: (state: MainWindowAttentionState) => void,
+  ) => () => void;
   getUpdateState: () => Promise<DesktopUpdateState>;
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
@@ -1019,6 +1044,8 @@ export interface DesktopBridge {
    * Electron desktop build; web builds have `preview === undefined`.
    */
   preview?: DesktopPreviewBridge;
+  /** macOS-only companion controller. Omitted by web and unsupported desktop hosts. */
+  companions?: DesktopCompanionsBridge;
 }
 
 export interface DesktopPreviewBridge {
