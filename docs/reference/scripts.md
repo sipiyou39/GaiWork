@@ -16,6 +16,9 @@
 - `vp run dist:desktop:linux` — Builds a Linux AppImage into `./release`.
 - `vp run dist:desktop:win` — Builds a Windows NSIS installer into `./release`.
 
+Desktop Release packaging requires a clean `main` branch. The GitHub Release workflow supports its
+detached checkout only after verifying that `HEAD` belongs to `origin/main`.
+
 ## Desktop `.dmg` packaging notes
 
 - Default build is unsigned/not notarized for local sharing.

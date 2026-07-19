@@ -59,6 +59,9 @@ pnpm exec vp run build:desktop
 pnpm run dist:desktop:dmg:arm64
 ```
 
+Release packaging refuses to run unless the current branch is `main` and the worktree is clean.
+GitHub release builds may use a detached checkout, but its commit must belong to `origin/main`.
+
 Local artifacts are unsigned by default. Signing and notarization require credentials and a provisioning profile issued for `io.github.sipiyou39.gaiwork`; the original T3 Code signing identity must not be reused.
 
 ## Providers

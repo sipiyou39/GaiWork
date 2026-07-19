@@ -29,6 +29,7 @@ import {
   resolveBuildOptions,
   resolveDesktopBuildIconAssets,
   resolveDesktopProductName,
+  resolveDesktopReleaseSourceViolation,
   resolveDesktopUpdateChannel,
   resolveDesktopWebAssetBrand,
   resolveGitHubPublishConfig,
@@ -87,6 +88,61 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it("switches desktop packaging product names to nightly for nightly builds", () => {
     assert.equal(resolveDesktopProductName("0.0.17"), "GaiWork");
     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "GaiWork (Nightly)");
+  });
+
+  it("allows a clean local Release only from main", () => {
+    assert.isUndefined(
+      resolveDesktopReleaseSourceViolation({
+        currentBranch: "main",
+        dirtyEntries: [],
+        trustedMainRef: undefined,
+        headInTrustedMain: undefined,
+      }),
+    );
+
+    const violation = resolveDesktopReleaseSourceViolation({
+      currentBranch: "experiment/new-workflow",
+      dirtyEntries: [],
+      trustedMainRef: undefined,
+      headInTrustedMain: undefined,
+    });
+    assert.equal(violation?.reason, "wrong-branch");
+    assert.match(violation?.message ?? "", /Switch to 'main'/u);
+  });
+
+  it("rejects dirty Release sources before checking their branch", () => {
+    const violation = resolveDesktopReleaseSourceViolation({
+      currentBranch: "main",
+      dirtyEntries: [" M apps/web/src/example.ts", "?? experiment.txt"],
+      trustedMainRef: undefined,
+      headInTrustedMain: undefined,
+    });
+
+    assert.equal(violation?.reason, "dirty-worktree");
+    assert.deepStrictEqual(violation?.dirtyEntries, [
+      " M apps/web/src/example.ts",
+      "?? experiment.txt",
+    ]);
+  });
+
+  it("allows detached CI builds only when HEAD belongs to the trusted main ref", () => {
+    assert.isUndefined(
+      resolveDesktopReleaseSourceViolation({
+        currentBranch: undefined,
+        dirtyEntries: [],
+        trustedMainRef: "origin/main",
+        headInTrustedMain: true,
+      }),
+    );
+
+    const violation = resolveDesktopReleaseSourceViolation({
+      currentBranch: undefined,
+      dirtyEntries: [],
+      trustedMainRef: "origin/main",
+      headInTrustedMain: false,
+    });
+    assert.equal(violation?.reason, "head-not-in-trusted-main");
+    assert.match(violation?.message ?? "", /origin\/main/u);
   });
 
   it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {
@@ -605,6 +661,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         mockUpdates: Option.none(),
         mockUpdateServerPort: Option.none(),
         wslPrebuild: Option.none(),
+        trustedMainRef: Option.none(),
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -643,6 +700,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         mockUpdates: Option.some(false),
         mockUpdateServerPort: Option.none(),
         wslPrebuild: Option.none(),
+        trustedMainRef: Option.none(),
       }).pipe(
         Effect.provide(
           ConfigProvider.layer(

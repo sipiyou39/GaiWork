@@ -44,6 +44,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
+const REQUIRED_RELEASE_BRANCH = "main";
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
 const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
@@ -132,6 +133,7 @@ interface BuildCliInput {
   readonly mockUpdates: Option.Option<boolean>;
   readonly mockUpdateServerPort: Option.Option<number>;
   readonly wslPrebuild: Option.Option<string>;
+  readonly trustedMainRef: Option.Option<string>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -241,6 +243,73 @@ export class BuildCommandFailedError extends Schema.TaggedErrorClass<BuildComman
     const outputSuffix = outputSections.length > 0 ? `\n\n${outputSections.join("\n\n")}` : "";
     return `Command exited with non-zero exit code (${this.exitCode})${outputSuffix}`;
   }
+}
+
+const UnsafeDesktopReleaseSourceReason = Schema.Literals([
+  "dirty-worktree",
+  "wrong-branch",
+  "head-not-in-trusted-main",
+]);
+
+export class UnsafeDesktopReleaseSourceError extends Schema.TaggedErrorClass<UnsafeDesktopReleaseSourceError>()(
+  "UnsafeDesktopReleaseSourceError",
+  {
+    reason: UnsafeDesktopReleaseSourceReason,
+    currentBranch: Schema.optionalKey(Schema.String),
+    trustedMainRef: Schema.optionalKey(Schema.String),
+    dirtyEntries: Schema.Array(Schema.String),
+  },
+) {
+  override get message(): string {
+    if (this.reason === "dirty-worktree") {
+      const visibleEntries = this.dirtyEntries.slice(0, 5);
+      const remainingCount = this.dirtyEntries.length - visibleEntries.length;
+      const remainingSuffix = remainingCount > 0 ? `\n  … and ${remainingCount} more` : "";
+      return `Refusing to build a GaiWork Release from a dirty worktree. Commit or stash these changes first:\n  ${visibleEntries.join("\n  ")}${remainingSuffix}`;
+    }
+
+    if (this.reason === "head-not-in-trusted-main") {
+      return `Refusing to build a GaiWork Release because HEAD is not contained in the trusted main ref '${this.trustedMainRef ?? REQUIRED_RELEASE_BRANCH}'.`;
+    }
+
+    const currentSource = this.currentBranch ? `branch '${this.currentBranch}'` : "a detached HEAD";
+    return `Refusing to build a GaiWork Release from ${currentSource}. Switch to '${REQUIRED_RELEASE_BRANCH}' first.`;
+  }
+}
+
+export function resolveDesktopReleaseSourceViolation(input: {
+  readonly currentBranch: string | undefined;
+  readonly dirtyEntries: ReadonlyArray<string>;
+  readonly trustedMainRef: string | undefined;
+  readonly headInTrustedMain: boolean | undefined;
+}): UnsafeDesktopReleaseSourceError | undefined {
+  if (input.dirtyEntries.length > 0) {
+    return new UnsafeDesktopReleaseSourceError({
+      reason: "dirty-worktree",
+      ...(input.currentBranch ? { currentBranch: input.currentBranch } : {}),
+      ...(input.trustedMainRef ? { trustedMainRef: input.trustedMainRef } : {}),
+      dirtyEntries: [...input.dirtyEntries],
+    });
+  }
+
+  if (input.trustedMainRef) {
+    return input.headInTrustedMain
+      ? undefined
+      : new UnsafeDesktopReleaseSourceError({
+          reason: "head-not-in-trusted-main",
+          ...(input.currentBranch ? { currentBranch: input.currentBranch } : {}),
+          trustedMainRef: input.trustedMainRef,
+          dirtyEntries: [],
+        });
+  }
+
+  return input.currentBranch === REQUIRED_RELEASE_BRANCH
+    ? undefined
+    : new UnsafeDesktopReleaseSourceError({
+        reason: "wrong-branch",
+        ...(input.currentBranch ? { currentBranch: input.currentBranch } : {}),
+        dirtyEntries: [],
+      });
 }
 
 const desktopIconPlatformNames = {
@@ -480,6 +549,63 @@ const spawnAndCollectOutput = Effect.fn("spawnAndCollectOutput")(function* (
   return { stdout, stderr, exitCode } as const;
 });
 
+const runReleaseSourceGitCommand = Effect.fn("runReleaseSourceGitCommand")(function* (
+  repoRoot: string,
+  args: ReadonlyArray<string>,
+  allowedExitCodes: ReadonlyArray<number> = [0],
+) {
+  const result = yield* spawnAndCollectOutput(
+    ChildProcess.make("git", args, {
+      cwd: repoRoot,
+    }),
+  );
+
+  if (!allowedExitCodes.includes(result.exitCode)) {
+    return yield* new BuildCommandFailedError({
+      command: `git ${args.join(" ")}`,
+      exitCode: result.exitCode,
+      ...(result.stdout.trim() ? { stdoutTail: result.stdout } : {}),
+      ...(result.stderr.trim() ? { stderrTail: result.stderr } : {}),
+    });
+  }
+
+  return result;
+});
+
+export const assertDesktopReleaseSource = Effect.fn("assertDesktopReleaseSource")(function* (
+  repoRoot: string,
+  trustedMainRef: string | undefined,
+) {
+  const status = yield* runReleaseSourceGitCommand(repoRoot, [
+    "status",
+    "--porcelain=v1",
+    "--untracked-files=normal",
+  ]);
+  const branch = yield* runReleaseSourceGitCommand(
+    repoRoot,
+    ["symbolic-ref", "--quiet", "--short", "HEAD"],
+    [0, 1],
+  );
+  const normalizedTrustedMainRef = trustedMainRef?.trim() || undefined;
+  const headInTrustedMain = normalizedTrustedMainRef
+    ? (yield* runReleaseSourceGitCommand(
+        repoRoot,
+        ["merge-base", "--is-ancestor", "HEAD", normalizedTrustedMainRef],
+        [0, 1],
+      )).exitCode === 0
+    : undefined;
+  const violation = resolveDesktopReleaseSourceViolation({
+    currentBranch: branch.exitCode === 0 ? branch.stdout.trim() || undefined : undefined,
+    dirtyEntries: status.stdout.split(/\r?\n/u).filter((line) => line.length > 0),
+    trustedMainRef: normalizedTrustedMainRef,
+    headInTrustedMain,
+  });
+
+  if (violation) {
+    return yield* violation;
+  }
+});
+
 const resolveGitCommitHash = Effect.fn("resolveGitCommitHash")(function* (repoRoot: string) {
   const result = yield* spawnAndCollectOutput(
     ChildProcess.make("git", ["rev-parse", "--short=12", "HEAD"], {
@@ -566,6 +692,7 @@ interface ResolvedBuildOptions {
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
   readonly wslPrebuild: string | undefined;
+  readonly trustedMainRef: string | undefined;
 }
 
 interface StagePackageJson {
@@ -1066,6 +1193,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
 
   const wslPrebuild =
     Option.getOrUndefined(input.wslPrebuild) ?? Option.getOrUndefined(env.wslPrebuild);
+  const trustedMainRef = Option.getOrUndefined(input.trustedMainRef);
 
   return {
     platform,
@@ -1080,6 +1208,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdates,
     mockUpdateServerPort,
     wslPrebuild,
+    trustedMainRef,
   } satisfies ResolvedBuildOptions;
 });
 
@@ -1576,6 +1705,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   options: ResolvedBuildOptions,
 ) {
   const repoRoot = yield* RepoRoot;
+  yield* assertDesktopReleaseSource(repoRoot, options.trustedMainRef);
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
   const hostPlatform = yield* HostProcessPlatform;
@@ -1987,6 +2117,12 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   wslPrebuild: Flag.string("wsl-prebuild").pipe(
     Flag.withDescription(
       "Path to a prebuilt Linux node-pty (pty.node) for the target arch, staged for the WSL backend (env: T3CODE_DESKTOP_WSL_PREBUILD).",
+    ),
+    Flag.optional,
+  ),
+  trustedMainRef: Flag.string("trusted-main-ref").pipe(
+    Flag.withDescription(
+      "CI-only ref that must contain HEAD; local Release builds otherwise require branch main.",
     ),
     Flag.optional,
   ),
