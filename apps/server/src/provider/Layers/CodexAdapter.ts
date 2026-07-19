@@ -38,6 +38,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { PRODUCT_MCP_SERVER_NAME } from "@t3tools/shared/productIdentity";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 
@@ -1410,9 +1411,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                 },
                 appServerArgs: [
                   "-c",
-                  `mcp_servers.t3-code.url=${mcpSession.endpoint}`,
+                  `mcp_servers.${PRODUCT_MCP_SERVER_NAME}.url=${mcpSession.endpoint}`,
                   "-c",
-                  'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+                  `mcp_servers.${PRODUCT_MCP_SERVER_NAME}.bearer_token_env_var="T3_MCP_BEARER_TOKEN"`,
                 ],
               }
             : {}),

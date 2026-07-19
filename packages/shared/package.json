@@ -186,6 +186,10 @@
     "./httpReadiness": {
       "types": "./src/httpReadiness.ts",
       "import": "./src/httpReadiness.ts"
+    },
+    "./productIdentity": {
+      "types": "./src/productIdentity.ts",
+      "import": "./src/productIdentity.ts"
     }
   },
   "scripts": {

@@ -4,6 +4,14 @@ import * as NodeModule from "node:module";
 
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import {
+  PRODUCT_DESKTOP_APP_ID,
+  PRODUCT_DESKTOP_DEVELOPMENT_SCHEME,
+  PRODUCT_DESKTOP_PRODUCTION_SCHEME,
+  PRODUCT_GITHUB_REPOSITORY,
+  PRODUCT_NAME,
+  PRODUCT_SLUG,
+} from "@t3tools/shared/productIdentity";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
@@ -35,7 +43,6 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "com.t3tools.t3code";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -565,7 +572,7 @@ interface StagePackageJson {
   readonly name: string;
   readonly version: string;
   readonly buildVersion: string;
-  readonly t3codeCommitHash: string;
+  readonly gaiworkCommitHash: string;
   readonly private: true;
   readonly packageManager: string;
   readonly description: string;
@@ -752,7 +759,7 @@ export function resolveMacPasskeySigningConfiguration(
   }
 
   return {
-    appId: DESKTOP_APP_ID,
+    appId: PRODUCT_DESKTOP_APP_ID,
     teamId,
     rpDomains: uniqueRpDomains,
     provisioningProfilePath,
@@ -1309,7 +1316,7 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
   const rawRepo = (
     Option.getOrUndefined(env.updateRepository)?.trim() ||
     Option.getOrUndefined(env.githubRepository)?.trim() ||
-    ""
+    PRODUCT_GITHUB_REPOSITORY
   ).trim();
   if (!rawRepo) return undefined;
 
@@ -1368,8 +1375,8 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+    ? `${PRODUCT_NAME} (Nightly)`
+    : (desktopPackageJson.productName ?? PRODUCT_NAME);
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -1387,9 +1394,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     | undefined,
 ) {
   const buildConfig: Record<string, unknown> = {
-    appId: DESKTOP_APP_ID,
+    appId: PRODUCT_DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    artifactName: `${PRODUCT_NAME}-${version}-\${arch}.\${ext}`,
     directories: {
       buildResources: "apps/desktop/resources",
     },
@@ -1428,8 +1435,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       protocols: [
         {
-          name: "T3 Code",
-          schemes: ["t3code", "t3code-dev"],
+          name: PRODUCT_NAME,
+          schemes: [PRODUCT_DESKTOP_PRODUCTION_SCHEME, PRODUCT_DESKTOP_DEVELOPMENT_SCHEME],
         },
       ],
       ...(macPasskeySigning
@@ -1444,12 +1451,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "linux") {
     buildConfig.linux = {
       target: [target],
-      executableName: "t3code",
+      executableName: PRODUCT_SLUG,
       icon: "icons",
       category: "Development",
       desktop: {
         entry: {
-          StartupWMClass: "t3code",
+          StartupWMClass: PRODUCT_SLUG,
         },
       },
     };
@@ -1754,14 +1761,14 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     stageDependencies,
   );
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    name: PRODUCT_SLUG,
     version: appVersion,
     buildVersion: appVersion,
-    t3codeCommitHash: commitHash,
+    gaiworkCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description: "T3 Code desktop build",
-    author: "T3 Tools",
+    description: `${PRODUCT_NAME} desktop build`,
+    author: `${PRODUCT_NAME} contributors`,
     main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
       options.platform,
@@ -1984,7 +1991,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.optional,
   ),
 }).pipe(
-  Command.withDescription("Build a desktop artifact for T3 Code."),
+  Command.withDescription(`Build a desktop artifact for ${PRODUCT_NAME}.`),
   Command.withHandler((input) => Effect.flatMap(resolveBuildOptions(input), buildDesktopArtifact)),
 );
 

@@ -6,6 +6,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
 import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import { PRODUCT_HOME_DIRECTORY, PRODUCT_NAME } from "@t3tools/shared/productIdentity";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -30,7 +31,7 @@ const DESKTOP_DEV_LOOPBACK_HOST = "127.0.0.1";
 const DEV_PORT_PROBE_HOSTS = ["127.0.0.1", "0.0.0.0", "::1", "::"] as const;
 
 export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
-  path.join(NodeOS.homedir(), ".t3"),
+  path.join(NodeOS.homedir(), PRODUCT_HOME_DIRECTORY),
 );
 
 const MODE_ARGS = {
@@ -586,7 +587,9 @@ const devRunnerCli = Command.make("dev-runner", {
     Argument.withDescription("Development mode to run."),
   ),
   t3Home: Flag.string("home-dir").pipe(
-    Flag.withDescription("Base directory for all T3 Code data (equivalent to T3CODE_HOME)."),
+    Flag.withDescription(
+      `Base directory for all ${PRODUCT_NAME} data (equivalent to T3CODE_HOME).`,
+    ),
     Flag.withFallbackConfig(optionalStringConfig("T3CODE_HOME")),
   ),
   noBrowser: Flag.boolean("no-browser").pipe(

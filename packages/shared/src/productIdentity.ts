@@ -1,0 +1,14 @@
+export const PRODUCT_NAME = "GaiWork";
+export const PRODUCT_SLUG = "gaiwork";
+
+export const PRODUCT_DESKTOP_APP_ID = "io.github.sipiyou39.gaiwork";
+export const PRODUCT_DESKTOP_DEVELOPMENT_APP_ID = `${PRODUCT_DESKTOP_APP_ID}.dev`;
+export const PRODUCT_DESKTOP_PRODUCTION_SCHEME = PRODUCT_SLUG;
+export const PRODUCT_DESKTOP_DEVELOPMENT_SCHEME = `${PRODUCT_SLUG}-dev`;
+export const PRODUCT_DESKTOP_USER_DATA_DIRECTORY = PRODUCT_SLUG;
+export const PRODUCT_DESKTOP_DEVELOPMENT_USER_DATA_DIRECTORY = `${PRODUCT_SLUG}-dev`;
+export const PRODUCT_HOME_DIRECTORY = `.${PRODUCT_SLUG}`;
+
+export const PRODUCT_GITHUB_REPOSITORY = "sipiyou39/GaiWork";
+export const PRODUCT_MCP_SERVER_NAME = PRODUCT_SLUG;
+export const PRODUCT_CODEX_CLIENT_NAME = "gaiwork_desktop";

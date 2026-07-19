@@ -21,6 +21,7 @@ import {
   type ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import { PRODUCT_MCP_SERVER_NAME } from "@t3tools/shared/productIdentity";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
@@ -538,13 +539,13 @@ export function makeCursorAdapter(
             childProcessSpawner,
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
-            clientInfo: { name: "t3-code", version: "0.0.0" },
+            clientInfo: { name: PRODUCT_MCP_SERVER_NAME, version: "0.0.0" },
             ...(mcpSession
               ? {
                   mcpServers: [
                     {
                       type: "http" as const,
-                      name: "t3-code",
+                      name: PRODUCT_MCP_SERVER_NAME,
                       url: mcpSession.endpoint,
                       headers: [
                         {

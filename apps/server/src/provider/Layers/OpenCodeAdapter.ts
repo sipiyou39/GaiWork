@@ -23,6 +23,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import type { OpencodeClient, Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { PRODUCT_MCP_SERVER_NAME } from "@t3tools/shared/productIdentity";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -1055,7 +1056,7 @@ export function makeOpenCodeAdapter(
               if (mcpSession && !server.external) {
                 yield* runOpenCodeSdk("mcp.add", () =>
                   client.mcp.add({
-                    name: "t3-code",
+                    name: PRODUCT_MCP_SERVER_NAME,
                     config: {
                       type: "remote",
                       url: mcpSession.endpoint,
@@ -1069,7 +1070,7 @@ export function makeOpenCodeAdapter(
               }
               const openCodeSession = yield* runOpenCodeSdk("session.create", () =>
                 client.session.create({
-                  title: `T3 Code ${input.threadId}`,
+                  title: `GaiWork ${input.threadId}`,
                   permission: buildOpenCodePermissionRules(input.runtimeMode),
                 }),
               );

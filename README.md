@@ -1,57 +1,78 @@
-# T3 Code
+# GaiWork
 
-T3 Code is a minimal web GUI for coding agents (currently Codex, Claude, Cursor, and OpenCode, more coming soon).
+GaiWork is a workflow-focused fork of [T3 Code](https://github.com/pingdotgg/t3code), a desktop and web interface for coding agents such as Codex, Claude, Cursor, and OpenCode.
 
-## Installation
+The first GaiWork milestone keeps the upstream architecture while giving the desktop app a fully separate runtime identity. It can therefore run beside T3 Code without reusing its application state, URL handlers, preview sessions, or update feed.
 
-> [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, and OpenCode.
-> Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `cursor-agent login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+## Runtime isolation
 
-### Run without installing
+| Surface              | GaiWork identity                                 |
+| -------------------- | ------------------------------------------------ |
+| Product name         | `GaiWork`                                        |
+| macOS/Windows app ID | `io.github.sipiyou39.gaiwork`                    |
+| App protocol         | `gaiwork://` (`gaiwork-dev://` in development)   |
+| Desktop data         | `~/Library/Application Support/gaiwork` on macOS |
+| Backend state        | `~/.gaiwork`                                     |
+| Preview partitions   | `persist:gaiwork-preview-*`                      |
+| MCP browser server   | `gaiwork`                                        |
+| Update repository    | `sipiyou39/GaiWork`                              |
 
-```bash
-npx t3@latest
-```
+Internal `@t3tools/*` package names and `T3CODE_*` environment variables are intentionally retained for now. They do not identify an installed desktop application, and keeping them limits conflicts when syncing future upstream changes.
 
-Tip: Use `npx t3@latest --help` for the full CLI reference.
+Provider authentication remains shared unless you configure a separate provider home. For example, GaiWork can reuse an existing Codex login while keeping all GaiWork UI, backend, preview, and desktop preferences separate from T3 Code.
 
-### Desktop app
+## Development
 
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
+### Requirements
 
-#### Windows (`winget`)
+- Node.js `^24.13.1`
+- pnpm `11.10.0`
+- At least one authenticated coding-agent provider
 
-```bash
-winget install T3Tools.T3Code
-```
-
-#### macOS (Homebrew)
+Install Vite+ if `vp` is not already available:
 
 ```bash
-brew install --cask t3-code
+curl -fsSL https://vite.plus | bash
 ```
 
-#### Arch Linux (AUR)
+Install dependencies and launch the isolated desktop development app:
 
 ```bash
-yay -S t3code-bin
+pnpm install --frozen-lockfile
+pnpm run dev:desktop
 ```
 
-## Some notes
+The development app appears as `GaiWork (Dev)` and uses its own bundle ID, protocol, state directories, and Dock icon.
 
-We are very very early in this project. Expect bugs.
+### Verification
 
-We are not accepting contributions yet.
+```bash
+pnpm exec vp check
+pnpm exec vp run typecheck
+pnpm exec vp run test
+pnpm exec vp run build:desktop
+```
 
-There's no public docs site yet, checkout the miscellaneous markdown files in [docs](./docs).
+### Build a macOS artifact
+
+```bash
+pnpm run dist:desktop:dmg:arm64
+```
+
+Local artifacts are unsigned by default. Signing and notarization require credentials and a provisioning profile issued for `io.github.sipiyou39.gaiwork`; the original T3 Code signing identity must not be reused.
+
+## Providers
+
+Install and authenticate at least one provider before use:
+
+- Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
+- Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
+- Cursor: install [Cursor CLI](https://cursor.com/cli) and run `cursor-agent login`
+- OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 
 ## Documentation
+
+The upstream documentation remains applicable to the shared architecture:
 
 - [Getting started](./docs/getting-started/quick-start.md)
 - [Architecture overview](./docs/architecture/overview.md)
@@ -59,32 +80,4 @@ There's no public docs site yet, checkout the miscellaneous markdown files in [d
 - [Operations](./docs/operations/ci.md)
 - [Reference](./docs/reference/encyclopedia.md)
 
-## If you REALLY want to contribute still.... read this first
-
-### Install `vp`
-
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
-
-```bash
-curl -fsSL https://vite.plus | bash
-```
-
-#### Windows
-
-```bash
-irm https://vite.plus/ps1 | iex
-```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
-
-```bash
-vp i
-```
-
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
-
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+GaiWork retains the upstream MIT license. See [LICENSE](./LICENSE).

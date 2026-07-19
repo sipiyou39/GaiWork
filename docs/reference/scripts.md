@@ -3,9 +3,9 @@
 - `vp run dev` — Starts contracts, server, and web in watch mode.
 - `vp run dev:server` — Starts just the WebSocket server. The server process runs on Bun (`@effect/platform-bun` + `BunPtyAdapter`), but task running uses `vp run`.
 - `vp run dev:web` — Starts just the Vite dev server for the web app.
-- Dev commands default `T3CODE_HOME` to `~/.t3` — the same shared home the desktop/production app uses. Override with `--home-dir` (see below) to keep dev state separate.
+- Dev commands default `T3CODE_HOME` to `~/.gaiwork` — the same shared home the GaiWork desktop/production app uses. Override with `--home-dir` (see below) to keep dev state separate.
 - Override server CLI-equivalent flags from root dev commands with `--`, for example:
-  `vp run dev -- --home-dir ~/.t3-2`
+  `vp run dev -- --home-dir ~/.gaiwork-2`
 - `vp run start` — Runs the production server (serves built web app as static files).
 - `vp run build` — Builds contracts, web app, and server.
 - `vp run typecheck` — Strict TypeScript checks for all packages.
@@ -20,7 +20,7 @@
 
 - Default build is unsigned/not notarized for local sharing.
 - The DMG build uses `assets/prod/black-macos-1024.png` as the production app icon source.
-- Desktop production windows load the bundled UI from `t3code://app/index.html` (not a `127.0.0.1` document URL).
+- Desktop production windows load the bundled UI from `gaiwork://app/index.html` (not a `127.0.0.1` document URL).
 - Desktop packaging includes `apps/server/dist` (the `t3` backend) and starts it on loopback with an auth token for WebSocket/API traffic.
 - Your tester can still open it on macOS by right-clicking the app and choosing **Open** on first launch.
 - To keep staging files for debugging package contents, run: `vp run dist:desktop:dmg -- --keep-stage`

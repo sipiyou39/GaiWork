@@ -8,7 +8,12 @@
 
 ## Project Snapshot
 
-T3 Code is a minimal web GUI for using coding agents like Codex and Claude.
+GaiWork is a workflow-focused fork of T3 Code, a minimal web GUI for using coding agents like Codex
+and Claude.
+
+Keep the fork's runtime identity isolated through `@t3tools/shared/productIdentity`. Do not
+reintroduce the upstream desktop bundle IDs, URL schemes, state directories, preview partitions,
+MCP server name, or update repository into GaiWork defaults.
 
 This repository is a VERY EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged.
 

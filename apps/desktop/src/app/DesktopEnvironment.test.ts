@@ -13,9 +13,9 @@ const defaultInput = {
   platform: "darwin",
   processArch: "arm64",
   appVersion: "0.0.22",
-  appPath: "/Applications/T3 Code.app/Contents/Resources/app.asar",
+  appPath: "/Applications/GaiWork.app/Contents/Resources/app.asar",
   isPackaged: false,
-  resourcesPath: "/Applications/T3 Code.app/Contents/Resources",
+  resourcesPath: "/Applications/GaiWork.app/Contents/Resources",
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
@@ -64,8 +64,8 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.appRoot, "/repo");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
       assert.equal(environment.backendCwd, "/repo");
-      assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
-      assert.equal(environment.linuxWmClass, "t3code-dev");
+      assert.equal(environment.appUserModelId, "io.github.sipiyou39.gaiwork.dev");
+      assert.equal(environment.linuxWmClass, "gaiwork-dev");
       assert.deepEqual(
         Option.map(environment.devServerUrl, (url) => url.href),
         Option.some("http://localhost:5173/"),
@@ -95,17 +95,33 @@ describe("DesktopEnvironment", () => {
     }),
   );
 
+  it.effect("uses isolated GaiWork defaults when no compatibility override is configured", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment();
+
+      assert.equal(environment.baseDir, "/Users/alice/.gaiwork");
+      assert.equal(environment.stateDir, "/Users/alice/.gaiwork/userdata");
+      assert.equal(environment.userDataDirName, "gaiwork");
+      assert.equal(environment.legacyUserDataDirName, "GaiWork");
+      assert.equal(environment.appUserModelId, "io.github.sipiyou39.gaiwork");
+      assert.equal(environment.linuxDesktopEntryName, "gaiwork.desktop");
+      assert.equal(environment.linuxWmClass, "gaiwork");
+      assert.equal(environment.branding.baseName, "GaiWork");
+      assert.equal(environment.displayName, "GaiWork");
+    }),
+  );
+
   it.effect("uses a configured app user model id override", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment(
         {},
         {
-          T3CODE_DESKTOP_APP_USER_MODEL_ID: " com.t3tools.t3code.dev.local ",
+          T3CODE_DESKTOP_APP_USER_MODEL_ID: " io.github.sipiyou39.gaiwork.dev.local ",
           VITE_DEV_SERVER_URL: "http://localhost:5173",
         },
       );
 
-      assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev.local");
+      assert.equal(environment.appUserModelId, "io.github.sipiyou39.gaiwork.dev.local");
     }),
   );
 

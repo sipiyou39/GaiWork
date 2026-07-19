@@ -21,6 +21,7 @@ import {
   type ModelUsage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
+import { PRODUCT_MCP_SERVER_NAME } from "@t3tools/shared/productIdentity";
 import {
   ApprovalRequestId,
   type CanonicalItemType,
@@ -3468,7 +3469,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(mcpSession
           ? {
               mcpServers: {
-                "t3-code": {
+                [PRODUCT_MCP_SERVER_NAME]: {
                   type: "http",
                   url: mcpSession.endpoint,
                   headers: {

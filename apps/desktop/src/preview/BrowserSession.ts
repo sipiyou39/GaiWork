@@ -8,8 +8,10 @@ import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
+import { PRODUCT_SLUG } from "@t3tools/shared/productIdentity";
 
-const PREVIEW_PARTITION_PREFIX = "persist:t3code-preview-";
+const PREVIEW_PARTITION_PREFIX = `persist:${PRODUCT_SLUG}-preview-`;
+const PRODUCT_USER_AGENT_TOKEN = new RegExp(`\\s*${PRODUCT_SLUG}\\/[\\d.]+`, "i");
 
 export class BrowserSessionPartitionDerivationError extends Schema.TaggedErrorClass<BrowserSessionPartitionDerivationError>()(
   "BrowserSessionPartitionDerivationError",
@@ -117,7 +119,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
           const userAgent = browserSession
             .getUserAgent()
             .replace(/Electron\/[\d.]+ /, "")
-            .replace(/\s*t3code\/[\d.]+/, "");
+            .replace(PRODUCT_USER_AGENT_TOKEN, "");
           browserSession.setUserAgent(userAgent);
           browserSession.setPermissionRequestHandler((_webContents, permission, callback) => {
             const allowed = ["clipboard-read", "clipboard-write", "notifications", "geolocation"];

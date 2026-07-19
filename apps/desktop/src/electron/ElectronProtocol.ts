@@ -5,12 +5,16 @@ import * as NodeTimersPromises from "node:timers/promises";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import {
+  PRODUCT_DESKTOP_DEVELOPMENT_SCHEME,
+  PRODUCT_DESKTOP_PRODUCTION_SCHEME,
+} from "@t3tools/shared/productIdentity";
 
 import * as Electron from "electron";
 
 export const DESKTOP_HOST = "app";
-export const DESKTOP_PRODUCTION_SCHEME = "t3code";
-export const DESKTOP_DEVELOPMENT_SCHEME = "t3code-dev";
+export const DESKTOP_PRODUCTION_SCHEME = PRODUCT_DESKTOP_PRODUCTION_SCHEME;
+export const DESKTOP_DEVELOPMENT_SCHEME = PRODUCT_DESKTOP_DEVELOPMENT_SCHEME;
 
 export function getDesktopScheme(isDevelopment: boolean): string {
   return isDevelopment ? DESKTOP_DEVELOPMENT_SCHEME : DESKTOP_PRODUCTION_SCHEME;

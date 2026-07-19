@@ -1,10 +1,11 @@
 {
   "name": "t3",
   "version": "0.0.28",
+  "private": true,
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pingdotgg/t3code",
+    "url": "https://github.com/sipiyou39/GaiWork",
     "directory": "apps/server"
   },
   "bin": {
