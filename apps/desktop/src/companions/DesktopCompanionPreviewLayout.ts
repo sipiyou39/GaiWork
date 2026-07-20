@@ -9,7 +9,9 @@ export const COMPANION_COMPOSER_BUTTON_SIZE = 32;
 export const COMPANION_COMPOSER_BUTTON_INSET = 12;
 export const COMPANION_PREVIEW_SCREEN_MARGIN = 12;
 export const COMPANION_PREVIEW_PLACEMENT_HYSTERESIS = 24;
-const SPRITE_TOGGLE_GAP = 7;
+const SPRITE_TOGGLE_VERTICAL_GAP = 7;
+const SPRITE_TOGGLE_VERTICAL_NUDGE = 10;
+const SPRITE_TOGGLE_SIDE_GAP = 3;
 const TOGGLE_CARD_GAP = 8;
 
 export interface DesktopCompanionPreviewGeometry {
@@ -78,7 +80,8 @@ function rawCandidate(
   const centerY = companion.y + companion.height / 2;
   const toggleSize = COMPANION_PREVIEW_TOGGLE_SIZE;
   if (placement === "top") {
-    const toggleY = companion.y - SPRITE_TOGGLE_GAP - toggleSize;
+    const toggleY =
+      companion.y - SPRITE_TOGGLE_VERTICAL_GAP - toggleSize + SPRITE_TOGGLE_VERTICAL_NUDGE;
     return {
       placement,
       toggleBounds: {
@@ -96,7 +99,8 @@ function rawCandidate(
     };
   }
   if (placement === "bottom") {
-    const toggleY = companion.y + companion.height + SPRITE_TOGGLE_GAP;
+    const toggleY =
+      companion.y + companion.height + SPRITE_TOGGLE_VERTICAL_GAP - SPRITE_TOGGLE_VERTICAL_NUDGE;
     return {
       placement,
       toggleBounds: {
@@ -114,7 +118,7 @@ function rawCandidate(
     };
   }
   if (placement === "left") {
-    const toggleX = companion.x - SPRITE_TOGGLE_GAP - toggleSize;
+    const toggleX = companion.x - SPRITE_TOGGLE_SIDE_GAP - toggleSize;
     return {
       placement,
       toggleBounds: {
@@ -131,7 +135,7 @@ function rawCandidate(
       },
     };
   }
-  const toggleX = companion.x + companion.width + SPRITE_TOGGLE_GAP;
+  const toggleX = companion.x + companion.width + SPRITE_TOGGLE_SIDE_GAP;
   return {
     placement,
     toggleBounds: {

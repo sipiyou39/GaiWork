@@ -14,6 +14,7 @@ describe("desktop companion preview placement", () => {
       workArea,
     });
     expect(result.placement).toBe("top");
+    expect(result.toggleBounds.y + result.toggleBounds.height).toBe(603);
     expect(result.cardBounds.y + result.cardBounds.height).toBeLessThan(result.toggleBounds.y);
   });
 
@@ -23,6 +24,7 @@ describe("desktop companion preview placement", () => {
       workArea,
     });
     expect(result.placement).toBe("bottom");
+    expect(result.toggleBounds.y).toBe(213);
     expect(result.cardBounds.y).toBeGreaterThan(result.toggleBounds.y);
   });
 
@@ -47,6 +49,7 @@ describe("desktop companion preview placement", () => {
       cardSize: { width: 720, height: 420 },
     });
     expect(result.placement).toBe("left");
+    expect(result.toggleBounds.x + result.toggleBounds.width).toBe(1_307);
     expect(result.cardBounds.x).toBeGreaterThanOrEqual(12);
     expect(result.cardBounds.x + result.cardBounds.width).toBeLessThanOrEqual(1_428);
   });
