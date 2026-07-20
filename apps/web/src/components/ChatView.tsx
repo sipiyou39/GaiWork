@@ -264,6 +264,8 @@ import {
   resolveServerConfigVersionMismatch,
 } from "../versionSkew";
 import { useAssetUrls } from "../assets/assetUrls";
+import { useDesktopCompanionComposerStore } from "../desktopCompanionComposerStore";
+import { useComposerSurfaceEnvironment } from "./chat/ComposerSurfaceEnvironment";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -427,6 +429,8 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      renderMode?: "full" | "desktop-composer";
+      onDesktopComposerSubmitSuccess?: () => void;
       routeKind: "server";
       draftId?: never;
     }
@@ -436,6 +440,8 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      renderMode?: "full" | "desktop-composer";
+      onDesktopComposerSubmitSuccess?: () => void;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -1088,7 +1094,11 @@ function ChatViewContent(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
+    renderMode = "full",
+    onDesktopComposerSubmitSuccess,
   } = props;
+  const isDesktopComposer = renderMode === "desktop-composer";
+  const { window: composerSurfaceWindow } = useComposerSurfaceEnvironment();
   const draftId = routeKind === "draft" ? props.draftId : null;
   const routeThreadRef = useMemo(
     () => scopeThreadRef(environmentId, threadId),
@@ -1203,7 +1213,13 @@ function ChatViewContent(props: ChatViewProps) {
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const composerElementContextsRef = useRef<ElementContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
-  const composerRef = useComposerHandleContext() ?? localComposerRef;
+  const inheritedComposerRef = useComposerHandleContext();
+  const composerRef = isDesktopComposer
+    ? localComposerRef
+    : (inheritedComposerRef ?? localComposerRef);
+  const desktopComposerOwner = useDesktopCompanionComposerStore((state) => state.owner);
+  const isComposerOwnedByDesktop =
+    !isDesktopComposer && desktopComposerOwner?.threadKey === routeThreadKey;
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
@@ -1229,7 +1245,10 @@ function ChatViewContent(props: ChatViewProps) {
   >({});
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
-  const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const shouldUsePlanSidebarSheet = useMediaQuery(
+    RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
+    composerSurfaceWindow,
+  );
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   const planSidebarDismissedForTurnRef = useRef<string | null>(null);
   // When set, the thread-change reset effect will open the sidebar instead of closing it.
@@ -1744,6 +1763,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
 
   useEffect(() => {
+    if (isDesktopComposer) return;
     if (!isMainWindowAttentive(mainWindowAttention)) return;
     if (!serverThread?.id) return;
     const threadUpdatedAt = Date.parse(serverThread.updatedAt);
@@ -1757,6 +1777,7 @@ function ChatViewContent(props: ChatViewProps) {
     );
   }, [
     activeThreadLastVisitedAt,
+    isDesktopComposer,
     mainWindowAttention,
     markThreadVisited,
     serverThread?.environmentId,
@@ -2422,10 +2443,10 @@ function ChatViewContent(props: ChatViewProps) {
     composerRef.current?.focusAtEnd();
   }, [composerRef]);
   const scheduleComposerFocus = useCallback(() => {
-    window.requestAnimationFrame(() => {
+    composerSurfaceWindow.requestAnimationFrame(() => {
       focusComposer();
     });
-  }, [focusComposer]);
+  }, [composerSurfaceWindow, focusComposer]);
   const addTerminalContextToDraft = useCallback(
     (selection: TerminalContextSelection) => {
       composerRef.current?.addTerminalContext(selection);
@@ -3682,13 +3703,13 @@ function ChatViewContent(props: ChatViewProps) {
 
   useEffect(() => {
     if (!activeThread?.id || terminalUiState.terminalOpen) return;
-    const frame = window.requestAnimationFrame(() => {
+    const frame = composerSurfaceWindow.requestAnimationFrame(() => {
       focusComposer();
     });
     return () => {
-      window.cancelAnimationFrame(frame);
+      composerSurfaceWindow.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposer, terminalUiState.terminalOpen]);
+  }, [activeThread?.id, composerSurfaceWindow, focusComposer, terminalUiState.terminalOpen]);
 
   useEffect(() => {
     if (!activeThread?.id) return;
@@ -3843,6 +3864,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
 
   useEffect(() => {
+    if (isDesktopComposer) return;
     const handler = (event: globalThis.KeyboardEvent) => {
       if (!activeThreadId || isCommandPaletteOpen()) {
         return;
@@ -3985,6 +4007,7 @@ function ChatViewContent(props: ChatViewProps) {
     toggleRightPanel,
     toggleTerminalVisibility,
     composerRef,
+    isDesktopComposer,
   ]);
 
   const onRevertToTurnCount = useCallback(
@@ -4434,6 +4457,8 @@ function ChatViewContent(props: ChatViewProps) {
         currentThreadKey === activeThreadKey ? null : currentThreadKey,
       );
       resetLocalDispatch();
+    } else {
+      onDesktopComposerSubmitSuccess?.();
     }
   };
 
@@ -4474,10 +4499,19 @@ function ChatViewContent(props: ChatViewProps) {
           error instanceof Error ? error.message : "Failed to submit approval decision.",
         );
       }
+      if (result._tag === "Success") {
+        onDesktopComposerSubmitSuccess?.();
+      }
       setRespondingRequestIds((existing) => existing.filter((id) => id !== requestId));
       return result;
     },
-    [activeThreadId, environmentId, respondToThreadApproval, setThreadError],
+    [
+      activeThreadId,
+      environmentId,
+      onDesktopComposerSubmitSuccess,
+      respondToThreadApproval,
+      setThreadError,
+    ],
   );
 
   const onRespondToUserInput = useCallback(
@@ -4502,10 +4536,19 @@ function ChatViewContent(props: ChatViewProps) {
           error instanceof Error ? error.message : "Failed to submit user input.",
         );
       }
+      if (result._tag === "Success") {
+        onDesktopComposerSubmitSuccess?.();
+      }
       setRespondingUserInputRequestIds((existing) => existing.filter((id) => id !== requestId));
       return result;
     },
-    [activeThreadId, environmentId, respondToThreadUserInput, setThreadError],
+    [
+      activeThreadId,
+      environmentId,
+      onDesktopComposerSubmitSuccess,
+      respondToThreadUserInput,
+      setThreadError,
+    ],
   );
 
   const setActivePendingUserInputQuestionIndex = useCallback(
@@ -4747,6 +4790,7 @@ function ChatViewContent(props: ChatViewProps) {
           }
         }
         sendInFlightRef.current = false;
+        onDesktopComposerSubmitSuccess?.();
         return;
       }
 
@@ -4779,6 +4823,7 @@ function ChatViewContent(props: ChatViewProps) {
       autoOpenPlanSidebar,
       environmentId,
       composerRef,
+      onDesktopComposerSubmitSuccess,
     ],
   );
 
@@ -4920,6 +4965,9 @@ function ChatViewContent(props: ChatViewProps) {
         );
       }
     }
+    if (failure === null) {
+      onDesktopComposerSubmitSuccess?.();
+    }
     finish();
   }, [
     activeProject,
@@ -4940,6 +4988,7 @@ function ChatViewContent(props: ChatViewProps) {
     autoOpenPlanSidebar,
     environmentId,
     composerRef,
+    onDesktopComposerSubmitSuccess,
   ]);
 
   const getModelDisabledReason = useCallback(
@@ -5111,6 +5160,99 @@ function ChatViewContent(props: ChatViewProps) {
   // Empty state: no active thread
   if (!activeThread) {
     return <NoActiveThreadState />;
+  }
+
+  const chatComposerElement = (
+    <ChatComposer
+      composerRef={composerRef}
+      composerDraftTarget={composerDraftTarget}
+      environmentId={environmentId}
+      routeKind={routeKind}
+      routeThreadRef={routeThreadRef}
+      draftId={draftId}
+      activeThreadId={activeThreadId}
+      activeThreadEnvironmentId={activeThread.environmentId}
+      activeThread={activeThread}
+      isServerThread={isServerThread}
+      isLocalDraftThread={isLocalDraftThread}
+      forceExpandedOnMobile={forceExpandedMobileComposer && isDraftHeroState}
+      projectSelectionRequired={isLocalDraftThread && activeProject === null}
+      phase={phase}
+      isConnecting={isConnecting}
+      isSendBusy={isSendBusy}
+      isPreparingWorktree={isPreparingWorktree}
+      environmentUnavailable={activeEnvironmentUnavailableState}
+      activePendingApproval={activePendingApproval}
+      pendingApprovals={pendingApprovals}
+      pendingUserInputs={pendingUserInputs}
+      activePendingProgress={activePendingProgress}
+      activePendingResolvedAnswers={activePendingResolvedAnswers}
+      activePendingIsResponding={activePendingIsResponding}
+      activePendingDraftAnswers={activePendingDraftAnswers}
+      activePendingQuestionIndex={activePendingQuestionIndex}
+      respondingRequestIds={respondingRequestIds}
+      showPlanFollowUpPrompt={showPlanFollowUpPrompt}
+      activeProposedPlan={activeProposedPlan}
+      activePlan={activePlan as { turnId?: TurnId } | null}
+      sidebarProposedPlan={sidebarProposedPlan as { turnId?: TurnId } | null}
+      planSidebarLabel={planSidebarLabel}
+      planSidebarOpen={planSidebarOpen}
+      runtimeMode={runtimeMode}
+      interactionMode={interactionMode}
+      lockedProvider={lockedProvider}
+      providerStatuses={providerStatuses as ServerProvider[]}
+      activeProjectDefaultModelSelection={activeProject?.defaultModelSelection}
+      activeThreadModelSelection={activeThread.modelSelection}
+      activeThreadActivities={activeThread.activities}
+      resolvedTheme={resolvedTheme}
+      settings={settings}
+      keybindings={keybindings}
+      terminalOpen={Boolean(terminalUiState.terminalOpen)}
+      gitCwd={gitCwd}
+      promptRef={promptRef}
+      composerImagesRef={composerImagesRef}
+      composerTerminalContextsRef={composerTerminalContextsRef}
+      composerElementContextsRef={composerElementContextsRef}
+      onSend={onSend}
+      onInterrupt={onInterrupt}
+      onImplementPlanInNewThread={onImplementPlanInNewThread}
+      onRespondToApproval={onRespondToApproval}
+      onSelectActivePendingUserInputOption={onSelectActivePendingUserInputOption}
+      onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
+      onPreviousActivePendingUserInputQuestion={onPreviousActivePendingUserInputQuestion}
+      onChangeActivePendingUserInputCustomAnswer={onChangeActivePendingUserInputCustomAnswer}
+      onProviderModelSelect={onProviderModelSelect}
+      getModelDisabledReason={getModelDisabledReason}
+      toggleInteractionMode={toggleInteractionMode}
+      handleRuntimeModeChange={handleRuntimeModeChange}
+      handleInteractionModeChange={handleInteractionModeChange}
+      togglePlanSidebar={togglePlanSidebar}
+      focusComposer={focusComposer}
+      scheduleComposerFocus={scheduleComposerFocus}
+      setThreadError={setThreadError}
+      onExpandImage={onExpandTimelineImage}
+    />
+  );
+
+  if (isDesktopComposer) {
+    return (
+      <div className="desktop-companion-composer-surface">
+        <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
+        <ProviderStatusBanner status={activeProviderStatus} />
+        <ThreadErrorBanner
+          error={threadError}
+          onDismiss={() => setThreadError(activeThread.id, null)}
+        />
+        {chatComposerElement}
+        {expandedImage ? (
+          <ExpandedImageDialog
+            key={`${expandedImage.images[expandedImage.index]?.src ?? "image"}:${expandedImage.index}`}
+            preview={expandedImage}
+            onClose={closeExpandedImage}
+          />
+        ) : null}
+      </div>
+    );
   }
 
   const panelToggleControls = (
@@ -5390,79 +5532,21 @@ function ChatViewContent(props: ChatViewProps) {
                       ref={attachDraftHeroComposerAnchorRef}
                       className="relative z-10 mx-auto w-full max-w-3xl"
                     >
-                      <ChatComposer
-                        composerRef={composerRef}
-                        composerDraftTarget={composerDraftTarget}
-                        environmentId={environmentId}
-                        routeKind={routeKind}
-                        routeThreadRef={routeThreadRef}
-                        draftId={draftId}
-                        activeThreadId={activeThreadId}
-                        activeThreadEnvironmentId={activeThread?.environmentId}
-                        activeThread={activeThread}
-                        isServerThread={isServerThread}
-                        isLocalDraftThread={isLocalDraftThread}
-                        forceExpandedOnMobile={forceExpandedMobileComposer && isDraftHeroState}
-                        projectSelectionRequired={isLocalDraftThread && activeProject === null}
-                        phase={phase}
-                        isConnecting={isConnecting}
-                        isSendBusy={isSendBusy}
-                        isPreparingWorktree={isPreparingWorktree}
-                        environmentUnavailable={activeEnvironmentUnavailableState}
-                        activePendingApproval={activePendingApproval}
-                        pendingApprovals={pendingApprovals}
-                        pendingUserInputs={pendingUserInputs}
-                        activePendingProgress={activePendingProgress}
-                        activePendingResolvedAnswers={activePendingResolvedAnswers}
-                        activePendingIsResponding={activePendingIsResponding}
-                        activePendingDraftAnswers={activePendingDraftAnswers}
-                        activePendingQuestionIndex={activePendingQuestionIndex}
-                        respondingRequestIds={respondingRequestIds}
-                        showPlanFollowUpPrompt={showPlanFollowUpPrompt}
-                        activeProposedPlan={activeProposedPlan}
-                        activePlan={activePlan as { turnId?: TurnId } | null}
-                        sidebarProposedPlan={sidebarProposedPlan as { turnId?: TurnId } | null}
-                        planSidebarLabel={planSidebarLabel}
-                        planSidebarOpen={planSidebarOpen}
-                        runtimeMode={runtimeMode}
-                        interactionMode={interactionMode}
-                        lockedProvider={lockedProvider}
-                        providerStatuses={providerStatuses as ServerProvider[]}
-                        activeProjectDefaultModelSelection={activeProject?.defaultModelSelection}
-                        activeThreadModelSelection={activeThread?.modelSelection}
-                        activeThreadActivities={activeThread?.activities}
-                        resolvedTheme={resolvedTheme}
-                        settings={settings}
-                        keybindings={keybindings}
-                        terminalOpen={Boolean(terminalUiState.terminalOpen)}
-                        gitCwd={gitCwd}
-                        promptRef={promptRef}
-                        composerImagesRef={composerImagesRef}
-                        composerTerminalContextsRef={composerTerminalContextsRef}
-                        composerElementContextsRef={composerElementContextsRef}
-                        onSend={onSend}
-                        onInterrupt={onInterrupt}
-                        onImplementPlanInNewThread={onImplementPlanInNewThread}
-                        onRespondToApproval={onRespondToApproval}
-                        onSelectActivePendingUserInputOption={onSelectActivePendingUserInputOption}
-                        onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
-                        onPreviousActivePendingUserInputQuestion={
-                          onPreviousActivePendingUserInputQuestion
-                        }
-                        onChangeActivePendingUserInputCustomAnswer={
-                          onChangeActivePendingUserInputCustomAnswer
-                        }
-                        onProviderModelSelect={onProviderModelSelect}
-                        getModelDisabledReason={getModelDisabledReason}
-                        toggleInteractionMode={toggleInteractionMode}
-                        handleRuntimeModeChange={handleRuntimeModeChange}
-                        handleInteractionModeChange={handleInteractionModeChange}
-                        togglePlanSidebar={togglePlanSidebar}
-                        focusComposer={focusComposer}
-                        scheduleComposerFocus={scheduleComposerFocus}
-                        setThreadError={setThreadError}
-                        onExpandImage={onExpandTimelineImage}
-                      />
+                      {isComposerOwnedByDesktop && desktopComposerOwner ? (
+                        <button
+                          type="button"
+                          className="desktop-companion-composer-handoff"
+                          onClick={desktopComposerOwner.reclaim}
+                        >
+                          <span className="desktop-companion-composer-handoff-dot" />
+                          <span>
+                            <strong>Editing from the desktop</strong>
+                            <small>Continue here</small>
+                          </span>
+                        </button>
+                      ) : (
+                        chatComposerElement
+                      )}
                     </div>
                     <div
                       className={cn(

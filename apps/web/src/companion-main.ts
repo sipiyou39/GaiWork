@@ -29,10 +29,9 @@ interface SpriteState {
   readonly toggle: HTMLButtonElement;
   readonly toggleChevron: SVGSVGElement;
   readonly card: HTMLElement;
-  readonly title: HTMLElement;
   readonly status: HTMLElement;
-  readonly userText: HTMLElement;
   readonly assistantText: HTMLElement;
+  readonly composerButton: HTMLButtonElement;
   image: HTMLImageElement | null;
   spriteReady: boolean;
   alphaMask: Uint8ClampedArray | null;
@@ -106,6 +105,20 @@ function makeChevron(): SVGSVGElement {
   return svg;
 }
 
+function makeComposerIcon(): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.classList.add("conversation-preview-composer-icon");
+  svg.setAttribute("viewBox", "0 0 20 20");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute(
+    "d",
+    "M4.25 14.75 5 11.5 13.8 2.7a1.45 1.45 0 0 1 2.05 2.05L7.05 13.55l-2.8 1.2Z",
+  );
+  svg.append(path);
+  return svg;
+}
+
 function makePreviewUi(companionId: CompanionId) {
   const toggle = document.createElement("button");
   toggle.type = "button";
@@ -125,24 +138,22 @@ function makePreviewUi(companionId: CompanionId) {
   card.dataset.companionId = companionId;
 
   const header = appendElement(card, "header", "conversation-preview-header");
-  const title = appendElement(header, "h2", "conversation-preview-title");
   const statusPill = appendElement(header, "div", "conversation-preview-status-pill");
   appendElement(statusPill, "span", "conversation-preview-status-dot");
   const status = appendElement(statusPill, "span", "conversation-preview-status");
 
-  const exchange = appendElement(card, "div", "conversation-preview-exchange");
-  const userRow = appendElement(exchange, "div", "conversation-preview-row is-user");
-  const userLabel = appendElement(userRow, "span", "conversation-preview-speaker");
-  userLabel.textContent = "YOU";
-  const userText = appendElement(userRow, "p", "conversation-preview-message");
-
-  const assistantRow = appendElement(exchange, "div", "conversation-preview-row is-assistant");
-  const assistantLabel = appendElement(assistantRow, "span", "conversation-preview-speaker");
-  assistantLabel.textContent = "GAI";
-  const assistantText = appendElement(assistantRow, "p", "conversation-preview-message");
+  const response = appendElement(card, "div", "conversation-preview-response");
+  const assistantText = appendElement(response, "p", "conversation-preview-message");
+  const footer = appendElement(card, "footer", "conversation-preview-footer");
+  const responseLabel = appendElement(footer, "span", "conversation-preview-response-label");
+  responseLabel.textContent = "Latest response";
+  const composerButton = appendElement(footer, "button", "conversation-preview-composer-button");
+  composerButton.type = "button";
+  composerButton.tabIndex = -1;
+  composerButton.append(makeComposerIcon());
 
   overlay.append(card);
-  return { toggle, toggleChevron, card, title, status, userText, assistantText };
+  return { toggle, toggleChevron, card, status, assistantText, composerButton };
 }
 
 function scheduleRender(delayMs = 0): void {
@@ -300,6 +311,9 @@ function updatePreviewUi(
   }
 
   sprite.toggle.hidden = false;
+  const composerActive = preview.mode === "composer" || preview.mode === "submitting";
+  const expanded = preview.mode === "preview";
+  const surfaceVisible = expanded || composerActive;
   sprite.card.hidden = false;
   sprite.toggle.style.left = `${preview.toggleX}px`;
   sprite.toggle.style.top = `${preview.toggleY}px`;
@@ -307,14 +321,14 @@ function updatePreviewUi(
   sprite.toggle.style.height = `${preview.toggleSize}px`;
   sprite.toggle.style.setProperty(
     "--preview-chevron-rotation",
-    `${chevronRotation(preview.placement, preview.expanded)}deg`,
+    `${chevronRotation(preview.placement, surfaceVisible)}deg`,
   );
   sprite.toggle.className = `preview-toggle placement-${preview.placement} signal-${companion.signal}${
-    preview.expanded ? " is-expanded" : ""
+    surfaceVisible ? " is-expanded" : ""
   }`;
   sprite.toggle.setAttribute(
     "aria-label",
-    `${preview.expanded ? "Hide" : "Show"} conversation preview for ${preview.title}`,
+    `${surfaceVisible ? "Hide" : "Show"} latest agent response`,
   );
 
   sprite.card.style.left = `${preview.cardX}px`;
@@ -323,19 +337,27 @@ function updatePreviewUi(
   sprite.card.style.height = `${preview.cardHeight}px`;
   sprite.card.className = `conversation-preview placement-${preview.placement} signal-${
     companion.signal
-  }${preview.expanded ? " is-expanded" : ""}${preview.assistantStreaming ? " is-streaming" : ""}`;
-  sprite.card.setAttribute("aria-hidden", preview.expanded ? "false" : "true");
+  }${expanded ? " is-expanded" : ""}${composerActive ? " is-composer-handoff" : ""}${
+    preview.assistantStreaming ? " is-streaming" : ""
+  }`;
+  sprite.card.setAttribute("aria-hidden", surfaceVisible ? "false" : "true");
   sprite.card.setAttribute(
     "aria-label",
-    `${preview.title}. Latest prompt: ${preview.userText ?? "No text prompt"}. Latest response: ${
-      preview.assistantText ?? emptyAssistantText(companion.signal)
-    }`,
+    `Latest response: ${preview.assistantText ?? emptyAssistantText(companion.signal)}`,
   );
 
-  sprite.title.textContent = preview.title;
   sprite.status.textContent = signalLabel(companion.signal);
-  sprite.userText.textContent = preview.userText ?? "Prompt with no text preview";
   sprite.assistantText.textContent = preview.assistantText ?? emptyAssistantText(companion.signal);
+  sprite.composerButton.disabled = !preview.composerAvailable;
+  sprite.composerButton.setAttribute(
+    "aria-label",
+    preview.composerAvailable
+      ? "Reply from the desktop"
+      : "Reply is available when the agent stops",
+  );
+  sprite.composerButton.title = preview.composerAvailable
+    ? "Reply"
+    : "Available when the agent stops";
 
   if (previousPreview && previousPreview.placement !== preview.placement) {
     for (const animation of sprite.layoutAnimations) animation.cancel();
@@ -516,6 +538,20 @@ function hitTest(clientX: number, clientY: number): PointerHit | null {
     if (!companion) continue;
     const preview = companion.preview;
     if (
+      preview?.mode === "preview" &&
+      preview.composerAvailable &&
+      pointInside(
+        clientX,
+        clientY,
+        preview.composerButtonX,
+        preview.composerButtonY,
+        preview.composerButtonSize,
+        preview.composerButtonSize,
+      )
+    ) {
+      return { companionId: companion.companionId, presentationIndex: index, target: "composer" };
+    }
+    if (
       preview &&
       pointInside(
         clientX,
@@ -529,7 +565,7 @@ function hitTest(clientX: number, clientY: number): PointerHit | null {
       return { companionId: companion.companionId, presentationIndex: index, target: "toggle" };
     }
     if (
-      preview?.expanded &&
+      preview?.mode === "preview" &&
       pointInside(
         clientX,
         clientY,

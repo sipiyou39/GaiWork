@@ -7,6 +7,7 @@ import {
 } from "../../pendingUserInput";
 import { CheckIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
+import { useComposerSurfaceEnvironment } from "./ComposerSurfaceEnvironment";
 
 interface PendingUserInputPanelProps {
   pendingUserInputs: PendingUserInput[];
@@ -57,6 +58,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   onToggleOption: (questionId: string, optionLabel: string) => void;
   onAdvance: () => void;
 }) {
+  const { window: surfaceWindow, document: surfaceDocument } = useComposerSurfaceEnvironment();
   const progress = derivePendingUserInputProgress(prompt.questions, answers, questionIndex);
   const activeQuestion = progress.activeQuestion;
   const autoAdvanceTimerRef = useRef<number | null>(null);
@@ -95,10 +97,10 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   useEffect(() => {
     return () => {
       if (autoAdvanceTimerRef.current !== null) {
-        window.clearTimeout(autoAdvanceTimerRef.current);
+        surfaceWindow.clearTimeout(autoAdvanceTimerRef.current);
       }
     };
-  }, []);
+  }, [surfaceWindow]);
 
   const handleOptionSelection = useEffectEvent((questionId: string, optionLabel: string) => {
     if (activeQuestion?.multiSelect) {
@@ -108,9 +110,9 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     setOptimisticSingleSelect({ questionId, optionLabel });
     onToggleOption(questionId, optionLabel);
     if (autoAdvanceTimerRef.current !== null) {
-      window.clearTimeout(autoAdvanceTimerRef.current);
+      surfaceWindow.clearTimeout(autoAdvanceTimerRef.current);
     }
-    autoAdvanceTimerRef.current = window.setTimeout(() => {
+    autoAdvanceTimerRef.current = surfaceWindow.setTimeout(() => {
       autoAdvanceTimerRef.current = null;
       onAdvanceRef.current();
     }, 200);
@@ -124,11 +126,14 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     const handler = (event: globalThis.KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      if (
+        target instanceof surfaceWindow.HTMLInputElement ||
+        target instanceof surfaceWindow.HTMLTextAreaElement
+      ) {
         return;
       }
       if (
-        target instanceof HTMLElement &&
+        target instanceof surfaceWindow.HTMLElement &&
         target.closest('[contenteditable]:not([contenteditable="false"])')
       ) {
         return;
@@ -142,9 +147,9 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
       event.preventDefault();
       handleOptionSelection(activeQuestion.id, option.label);
     };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [activeQuestion, isResponding]);
+    surfaceDocument.addEventListener("keydown", handler);
+    return () => surfaceDocument.removeEventListener("keydown", handler);
+  }, [activeQuestion, isResponding, surfaceDocument, surfaceWindow]);
 
   if (!activeQuestion) {
     return null;

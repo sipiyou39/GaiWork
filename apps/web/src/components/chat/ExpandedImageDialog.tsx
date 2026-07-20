@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
+import { useComposerSurfaceEnvironment } from "./ComposerSurfaceEnvironment";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 
 interface ExpandedImageDialogProps {
@@ -12,6 +13,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   preview,
   onClose,
 }: ExpandedImageDialogProps) {
+  const { window: surfaceWindow } = useComposerSurfaceEnvironment();
   const [imageOffset, setImageOffset] = useState(0);
   const index = (preview.index + imageOffset + preview.images.length) % preview.images.length;
 
@@ -39,9 +41,9 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
       event.stopPropagation();
       navigateImage(1);
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigateImage, onClose, preview.images.length]);
+    surfaceWindow.addEventListener("keydown", onKeyDown);
+    return () => surfaceWindow.removeEventListener("keydown", onKeyDown);
+  }, [navigateImage, onClose, preview.images.length, surfaceWindow]);
 
   const item = preview.images[index];
   if (!item) return null;

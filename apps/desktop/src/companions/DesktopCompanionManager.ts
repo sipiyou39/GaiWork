@@ -1,18 +1,19 @@
 import {
-  COMPANION_PREVIEW_TITLE_MAX_LENGTH,
+  DesktopCompanionPortalInteractiveInput,
+  DesktopCompanionPortalMetricsInput,
+  DesktopCompanionPortalTokenInput,
   CompanionPointerEvent,
   CompanionProjectionSnapshot,
   DEFAULT_COMPANION_DESKTOP_SCALE_PERCENT,
   type CompanionId,
   type CompanionProjection,
+  type DesktopCompanionCardMode,
   type DesktopCompanionOverlayPresentation,
+  type DesktopCompanionPortalLayout,
   type DesktopCompanionPresentation,
   type MainWindowAttentionState as MainWindowAttentionStateType,
 } from "@t3tools/contracts";
-import {
-  compactConversationPreviewText,
-  companionDisplayDimensions,
-} from "@t3tools/client-runtime/companions";
+import { companionDisplayDimensions } from "@t3tools/client-runtime/companions";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -22,6 +23,7 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
+import * as NodeCrypto from "node:crypto";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
@@ -38,6 +40,13 @@ import {
   type Rectangle,
 } from "./DesktopCompanionPositions.ts";
 import {
+  cancelDesktopCompanionPortal,
+  registerDesktopCompanionPortal,
+  resetDesktopCompanionPortalRegistry,
+} from "./DesktopCompanionPortalRegistry.ts";
+import {
+  COMPANION_COMPOSER_BUTTON_INSET,
+  COMPANION_COMPOSER_BUTTON_SIZE,
   chooseCompanionPreviewGeometry,
   rectangleContainsPoint,
   type DesktopCompanionPreviewGeometry,
@@ -48,13 +57,18 @@ const MIN_MOVE_INTERVAL_MS = 1_000 / 60;
 const decodeCompanionProjectionSnapshot = Schema.decodeUnknownEffect(CompanionProjectionSnapshot);
 const decodeCompanionPointerEvent = Schema.decodeUnknownEffect(CompanionPointerEvent);
 const decodeInteractive = Schema.decodeUnknownEffect(Schema.Boolean);
+const decodePortalTokenInput = Schema.decodeUnknownEffect(DesktopCompanionPortalTokenInput);
+const decodePortalMetricsInput = Schema.decodeUnknownEffect(DesktopCompanionPortalMetricsInput);
+const decodePortalInteractiveInput = Schema.decodeUnknownEffect(
+  DesktopCompanionPortalInteractiveInput,
+);
 
 interface CompanionLayout {
   projection: CompanionProjection;
   bounds: Rectangle;
   preview:
     | (DesktopCompanionPreviewGeometry & {
-        readonly expanded: boolean;
+        readonly mode: DesktopCompanionCardMode;
       })
     | null;
 }
@@ -97,6 +111,21 @@ interface PreviewSessionState {
   readonly threadKey: string;
   expanded: boolean;
   placement?: DesktopCompanionPreviewGeometry["placement"] | undefined;
+  cardSize?: { readonly width: number; readonly height: number } | undefined;
+}
+
+interface CompanionPortalSession {
+  readonly token: string;
+  readonly frameName: string;
+  readonly url: string;
+  readonly companionId: CompanionId;
+  readonly mainWindow: Electron.BrowserWindow;
+  window: Electron.BrowserWindow | null;
+  displayId: string;
+  ready: boolean;
+  layoutRevision: number;
+  lastLayoutSignature: string | null;
+  openTimeoutFiber: Fiber.Fiber<void, never> | null;
 }
 
 export function acceptCompanionSnapshot(
@@ -137,6 +166,12 @@ function companionUrl(isDevelopment: boolean): string {
   return new URL("companion.html", getDesktopUrl(isDevelopment)).href;
 }
 
+function companionPortalUrl(isDevelopment: boolean, token: string): string {
+  const url = new URL("companion-portal.html", getDesktopUrl(isDevelopment));
+  url.searchParams.set("token", token);
+  return url.href;
+}
+
 export function desktopCompanionPresentation(input: {
   readonly projection: CompanionProjection;
   readonly bounds: Rectangle;
@@ -148,14 +183,14 @@ export function desktopCompanionPresentation(input: {
     input.preview === null || conversationPreview === null
       ? null
       : {
-          expanded: input.preview.expanded,
+          mode: input.preview.mode,
           placement: input.preview.placement,
-          title:
-            compactConversationPreviewText(
-              input.projection.threadTitle,
-              COMPANION_PREVIEW_TITLE_MAX_LENGTH,
-            ) ?? "Untitled conversation",
-          ...conversationPreview,
+          assistantMessageId: conversationPreview.assistantMessageId,
+          assistantText: conversationPreview.assistantText,
+          assistantStreaming: conversationPreview.assistantStreaming,
+          composerAvailable: !["working", "connecting", "offline"].includes(
+            input.projection.signal,
+          ),
           cardX: Math.max(0, Math.round(input.preview.cardBounds.x - input.overlayBounds.x)),
           cardY: Math.max(0, Math.round(input.preview.cardBounds.y - input.overlayBounds.y)),
           cardWidth: Math.round(input.preview.cardBounds.width),
@@ -163,6 +198,27 @@ export function desktopCompanionPresentation(input: {
           toggleX: Math.max(0, Math.round(input.preview.toggleBounds.x - input.overlayBounds.x)),
           toggleY: Math.max(0, Math.round(input.preview.toggleBounds.y - input.overlayBounds.y)),
           toggleSize: Math.round(input.preview.toggleBounds.width),
+          composerButtonX: Math.max(
+            0,
+            Math.round(
+              input.preview.cardBounds.x +
+                input.preview.cardBounds.width -
+                COMPANION_COMPOSER_BUTTON_INSET -
+                COMPANION_COMPOSER_BUTTON_SIZE -
+                input.overlayBounds.x,
+            ),
+          ),
+          composerButtonY: Math.max(
+            0,
+            Math.round(
+              input.preview.cardBounds.y +
+                input.preview.cardBounds.height -
+                COMPANION_COMPOSER_BUTTON_INSET -
+                COMPANION_COMPOSER_BUTTON_SIZE -
+                input.overlayBounds.y,
+            ),
+          ),
+          composerButtonSize: COMPANION_COMPOSER_BUTTON_SIZE,
         };
   return {
     companionId: input.projection.companionId,
@@ -231,6 +287,9 @@ export const make = Effect.gen(function* () {
   let desiredDisplayIds = new Set<string>();
   let acceptedSnapshot: AcceptedSnapshot | null = null;
   let reconciliationFiber: Fiber.Fiber<void, never> | null = null;
+  let activePortal: CompanionPortalSession | null = null;
+  let emitActivePortalLayout = (): void => undefined;
+  let closeActivePortal = (): void => undefined;
   let quitting = false;
 
   const currentMain = electronWindow.main.pipe(Effect.map(Option.getOrNull));
@@ -268,6 +327,7 @@ export const make = Effect.gen(function* () {
       IpcChannels.COMPANION_PROJECTION_CHANNEL,
       presentationForEntry(entry),
     );
+    emitActivePortalLayout();
   };
 
   const emitAttentionState = (window: Electron.BrowserWindow): void => {
@@ -279,6 +339,7 @@ export const make = Effect.gen(function* () {
   };
 
   const markCompanionsReconnecting = (): void => {
+    closeActivePortal();
     desiredProjections = new Map(
       [...desiredProjections].map(([companionId, projection]) => [
         companionId,
@@ -360,12 +421,16 @@ export const make = Effect.gen(function* () {
         previousPlacement: session.placement,
       });
       session.placement = geometry.placement;
+      const portalMode =
+        activePortal?.companionId === layout.projection.companionId && activePortal.ready
+          ? "composer"
+          : null;
       layout.preview = {
         ...geometry,
-        expanded: session.expanded,
+        mode: portalMode ?? (session.expanded ? "preview" : "collapsed"),
       };
       occupied.push(geometry.toggleBounds);
-      if (session.expanded) occupied.push(geometry.cardBounds);
+      if (session.expanded || portalMode !== null) occupied.push(geometry.cardBounds);
     }
   };
 
@@ -623,7 +688,24 @@ export const make = Effect.gen(function* () {
     if (target === "companion") return layout.bounds;
     if (layout.preview === null) return null;
     if (target === "toggle") return layout.preview.toggleBounds;
-    return layout.preview.expanded ? layout.preview.cardBounds : null;
+    if (target === "composer") {
+      if (layout.preview.mode !== "preview") return null;
+      return {
+        x:
+          layout.preview.cardBounds.x +
+          layout.preview.cardBounds.width -
+          COMPANION_COMPOSER_BUTTON_INSET -
+          COMPANION_COMPOSER_BUTTON_SIZE,
+        y:
+          layout.preview.cardBounds.y +
+          layout.preview.cardBounds.height -
+          COMPANION_COMPOSER_BUTTON_INSET -
+          COMPANION_COMPOSER_BUTTON_SIZE,
+        width: COMPANION_COMPOSER_BUTTON_SIZE,
+        height: COMPANION_COMPOSER_BUTTON_SIZE,
+      };
+    }
+    return layout.preview.mode === "preview" ? layout.preview.cardBounds : null;
   };
 
   const moveLayout = (layout: CompanionLayout, nextBounds: Rectangle): void => {
@@ -656,9 +738,212 @@ export const make = Effect.gen(function* () {
     return { entry: nextEntry, layout: located.layout };
   };
 
+  const portalLayoutFor = (portal: CompanionPortalSession): DesktopCompanionPortalLayout | null => {
+    const located = findDraggedLayout(portal.companionId);
+    const compactPreview = located?.layout.preview;
+    if (!located || !compactPreview) return null;
+    const { entry } = located;
+    const session = previewSessions.get(portal.companionId);
+    const portalGeometry = chooseCompanionPreviewGeometry({
+      companionBounds: located.layout.bounds,
+      workArea: entry.workArea,
+      obstacles: entry.layouts
+        .filter((layout) => layout !== located.layout)
+        .map((layout) => layout.bounds),
+      previousPlacement: compactPreview.placement,
+      cardSize: session?.cardSize,
+    });
+    const signature = [
+      entry.displayId,
+      portalGeometry.placement,
+      portalGeometry.cardBounds.x,
+      portalGeometry.cardBounds.y,
+      portalGeometry.cardBounds.width,
+      portalGeometry.cardBounds.height,
+      compactPreview.cardBounds.x,
+      compactPreview.cardBounds.y,
+      entry.workArea.width,
+      entry.workArea.height,
+    ].join(":");
+    if (signature === portal.lastLayoutSignature) return null;
+    portal.lastLayoutSignature = signature;
+    if (portal.displayId !== entry.displayId) {
+      portal.displayId = entry.displayId;
+    }
+    if (
+      portal.window &&
+      !portal.window.isDestroyed() &&
+      !rectanglesEqual(portal.window.getBounds(), entry.workArea)
+    ) {
+      portal.window.setBounds(entry.workArea, false);
+    }
+    const layout: DesktopCompanionPortalLayout = {
+      token: portal.token,
+      revision: portal.layoutRevision,
+      displayId: entry.displayId,
+      placement: portalGeometry.placement,
+      cardX: Math.max(0, Math.round(portalGeometry.cardBounds.x - entry.overlayBounds.x)),
+      cardY: Math.max(0, Math.round(portalGeometry.cardBounds.y - entry.overlayBounds.y)),
+      cardWidth: Math.round(portalGeometry.cardBounds.width),
+      cardHeight: Math.round(portalGeometry.cardBounds.height),
+      compactCardX: Math.max(0, Math.round(compactPreview.cardBounds.x - entry.overlayBounds.x)),
+      compactCardY: Math.max(0, Math.round(compactPreview.cardBounds.y - entry.overlayBounds.y)),
+      compactCardWidth: Math.round(compactPreview.cardBounds.width),
+      compactCardHeight: Math.round(compactPreview.cardBounds.height),
+      workAreaWidth: entry.workArea.width,
+      workAreaHeight: entry.workArea.height,
+    };
+    portal.layoutRevision += 1;
+    return layout;
+  };
+
+  emitActivePortalLayout = (): void => {
+    const portal = activePortal;
+    if (!portal || portal.mainWindow.isDestroyed()) return;
+    const layout = portalLayoutFor(portal);
+    if (!layout) return;
+    portal.mainWindow.webContents.send(IpcChannels.COMPANION_PORTAL_LAYOUT_CHANNEL, layout);
+  };
+
+  const closePortalNow = (token: string): void => {
+    const portal = activePortal;
+    if (!portal || portal.token !== token) return;
+    activePortal = null;
+    cancelDesktopCompanionPortal(token);
+    if (portal.openTimeoutFiber !== null) runFork(Fiber.interrupt(portal.openTimeoutFiber));
+    const session = previewSessions.get(portal.companionId);
+    if (session) session.cardSize = undefined;
+    if (portal.window && !portal.window.isDestroyed()) portal.window.destroy();
+    void runPromise(reconcileOverlays).catch((cause) => {
+      void runPromise(
+        logWarning("could not restore companion preview after closing composer", {
+          companionId: portal.companionId,
+          cause: cause instanceof Error ? cause.message : String(cause),
+        }),
+      );
+    });
+  };
+  closeActivePortal = () => {
+    const portal = activePortal;
+    if (portal) closePortalNow(portal.token);
+  };
+
+  const requestPortalClose = (portal: CompanionPortalSession): void => {
+    if (!portal.mainWindow.isDestroyed()) {
+      portal.mainWindow.webContents.send(IpcChannels.COMPANION_CLOSE_COMPOSER_CHANNEL, {
+        token: portal.token,
+      });
+    }
+  };
+
+  const configurePortalWindow = (
+    portal: CompanionPortalSession,
+    window: Electron.BrowserWindow,
+  ): void => {
+    if (activePortal?.token !== portal.token) {
+      if (!window.isDestroyed()) window.destroy();
+      return;
+    }
+    portal.window = window;
+    ElectronWindow.excludeWindowFromAppearanceSync(window);
+    ElectronWindow.excludeWindowFromMainFallback(window);
+    window.setHasShadow(false);
+    window.setAlwaysOnTop(true, "screen-saver", 2);
+    window.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+      skipTransformProcessType: true,
+    });
+    window.setIgnoreMouseEvents(true, { forward: true });
+    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    window.webContents.on("will-navigate", (event, url) => {
+      if (url !== portal.url) event.preventDefault();
+    });
+    window.webContents.on("render-process-gone", () => closePortalNow(portal.token));
+    window.webContents.on(
+      "did-fail-load",
+      (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+        if (!isMainFrame) return;
+        void runPromise(
+          logWarning("companion composer document failed to load", {
+            companionId: portal.companionId,
+            errorCode,
+            errorDescription,
+            validatedUrl,
+          }),
+        );
+      },
+    );
+    window.on("closed", () => {
+      if (activePortal?.token === portal.token) closePortalNow(portal.token);
+    });
+  };
+
+  const openComposer = Effect.fn("desktop.companions.openComposer")(function* (
+    projection: CompanionProjection,
+  ) {
+    if (["working", "connecting", "offline"].includes(projection.signal)) return;
+    const located = findDraggedLayout(projection.companionId);
+    const mainWindow = yield* currentMain;
+    if (!located?.layout.preview || mainWindow === null || mainWindow.isDestroyed()) return;
+    if (activePortal) {
+      if (activePortal.companionId === projection.companionId) return;
+      requestPortalClose(activePortal);
+      closePortalNow(activePortal.token);
+    }
+
+    const session = previewSessionFor(projection);
+    session.expanded = true;
+    const token = NodeCrypto.randomUUID();
+    const frameName = `gaiwork-companion-${projection.companionId}-${token}`;
+    const url = companionPortalUrl(environment.isDevelopment, token);
+    const portal: CompanionPortalSession = {
+      token,
+      frameName,
+      url,
+      companionId: projection.companionId,
+      mainWindow,
+      window: null,
+      displayId: located.entry.displayId,
+      ready: false,
+      layoutRevision: 0,
+      lastLayoutSignature: null,
+      openTimeoutFiber: null,
+    };
+    activePortal = portal;
+    registerDesktopCompanionPortal({
+      token,
+      url,
+      frameName,
+      bounds: located.entry.workArea,
+      title: `${environment.displayName} — Companion composer`,
+      onCreated: (window) => configurePortalWindow(portal, window),
+    });
+    const layout = portalLayoutFor(portal);
+    if (!layout) {
+      closePortalNow(token);
+      return;
+    }
+    portal.openTimeoutFiber = runFork(
+      Effect.sleep(10_000).pipe(Effect.andThen(Effect.sync(() => closePortalNow(token)))),
+    );
+    mainWindow.webContents.send(IpcChannels.COMPANION_OPEN_COMPOSER_CHANNEL, {
+      token,
+      frameName,
+      url,
+      companionId: projection.companionId,
+      threadRef: projection.threadRef,
+      layout,
+    });
+  });
+
   const togglePreview = Effect.fn("desktop.companions.togglePreview")(function* (
     projection: CompanionProjection,
   ) {
+    if (activePortal?.companionId === projection.companionId) {
+      previewSessionFor(projection).expanded = false;
+      requestPortalClose(activePortal);
+      return;
+    }
     const session = previewSessionFor(projection);
     const nextExpanded = !session.expanded;
     session.expanded = nextExpanded;
@@ -741,6 +1026,8 @@ export const make = Effect.gen(function* () {
       }
       if (press.target === "toggle") {
         yield* togglePreview(layout.projection);
+      } else if (press.target === "composer") {
+        yield* openComposer(layout.projection);
       } else {
         yield* acknowledgeProjection(layout.projection);
       }
@@ -843,6 +1130,16 @@ export const make = Effect.gen(function* () {
         .filter((projection) => projection.showOnDesktop)
         .map((projection) => [projection.companionId, projection] as const),
     );
+    if (activePortal && !desktopPreviewsEnabled) {
+      closePortalNow(activePortal.token);
+    } else if (activePortal) {
+      const portalProjection = desiredProjections.get(activePortal.companionId);
+      if (!portalProjection) {
+        closePortalNow(activePortal.token);
+      } else if (["working", "connecting", "offline"].includes(portalProjection.signal)) {
+        requestPortalClose(activePortal);
+      }
+    }
     for (const companionId of previewSessions.keys()) {
       if (!desiredProjections.has(companionId) || !desktopPreviewsEnabled) {
         previewSessions.delete(companionId);
@@ -865,6 +1162,7 @@ export const make = Effect.gen(function* () {
       return;
     }
     yield* positions.reset;
+    closeActivePortal();
     inFlightPositions.clear();
     previewSessions.clear();
     yield* cancelScheduledReconciliation;
@@ -873,6 +1171,13 @@ export const make = Effect.gen(function* () {
 
   const destroyAllNow = () => {
     quitting = true;
+    const portal = activePortal;
+    activePortal = null;
+    if (portal) {
+      if (portal.openTimeoutFiber !== null) runFork(Fiber.interrupt(portal.openTimeoutFiber));
+      if (portal.window && !portal.window.isDestroyed()) portal.window.destroy();
+    }
+    resetDesktopCompanionPortalRegistry();
     desiredProjections = new Map();
     desiredDisplayIds = new Set();
     inFlightPositions.clear();
@@ -892,6 +1197,11 @@ export const make = Effect.gen(function* () {
       Electron.ipcMain.removeHandler(IpcChannels.COMPANION_RESET_POSITIONS_CHANNEL);
       Electron.ipcMain.removeHandler(IpcChannels.COMPANION_SET_INTERACTIVE_CHANNEL);
       Electron.ipcMain.removeHandler(IpcChannels.COMPANION_POINTER_EVENT_CHANNEL);
+      Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_READY_CHANNEL);
+      Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_CLOSING_CHANNEL);
+      Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_METRICS_CHANNEL);
+      Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_INTERACTIVE_CHANNEL);
+      Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_CLOSE_CHANNEL);
 
       Electron.ipcMain.handle(
         IpcChannels.COMPANION_SYNC_PROJECTION_CHANNEL,
@@ -924,6 +1234,101 @@ export const make = Effect.gen(function* () {
         runPromise(
           decodeCompanionPointerEvent(raw).pipe(
             Effect.flatMap((pointerEvent) => handlePointer(event.sender.id, pointerEvent)),
+          ),
+        ),
+      );
+      Electron.ipcMain.handle(IpcChannels.COMPANION_PORTAL_READY_CHANNEL, (event, raw: unknown) =>
+        runPromise(
+          decodePortalTokenInput(raw).pipe(
+            Effect.flatMap((input) =>
+              Effect.gen(function* () {
+                if (!(yield* isCurrentMainSender(event.sender.id))) return;
+                const portal = activePortal;
+                if (!portal || portal.token !== input.token || !portal.window) return;
+                if (portal.openTimeoutFiber !== null) {
+                  yield* Fiber.interrupt(portal.openTimeoutFiber);
+                }
+                portal.openTimeoutFiber = null;
+                portal.lastLayoutSignature = null;
+                const projection = desiredProjections.get(portal.companionId);
+                if (projection) yield* acknowledgeProjection(projection);
+                if (!portal.window.isDestroyed()) {
+                  portal.window.show();
+                  portal.window.focus();
+                }
+                portal.ready = true;
+                yield* reconcileOverlays;
+              }),
+            ),
+          ),
+        ),
+      );
+      Electron.ipcMain.handle(IpcChannels.COMPANION_PORTAL_CLOSING_CHANNEL, (event, raw: unknown) =>
+        runPromise(
+          decodePortalTokenInput(raw).pipe(
+            Effect.flatMap((input) =>
+              Effect.gen(function* () {
+                if (!(yield* isCurrentMainSender(event.sender.id))) return;
+                const portal = activePortal;
+                if (!portal || portal.token !== input.token) return;
+                portal.ready = false;
+                yield* reconcileOverlays;
+              }),
+            ),
+          ),
+        ),
+      );
+      Electron.ipcMain.handle(IpcChannels.COMPANION_PORTAL_METRICS_CHANNEL, (event, raw: unknown) =>
+        runPromise(
+          decodePortalMetricsInput(raw).pipe(
+            Effect.flatMap((input) =>
+              Effect.gen(function* () {
+                if (!(yield* isCurrentMainSender(event.sender.id))) return;
+                const portal = activePortal;
+                if (!portal || portal.token !== input.token) return;
+                const session = previewSessions.get(portal.companionId);
+                if (!session) return;
+                if (
+                  session.cardSize?.width === input.width &&
+                  session.cardSize.height === input.height
+                ) {
+                  return;
+                }
+                session.cardSize = { width: input.width, height: input.height };
+                portal.lastLayoutSignature = null;
+                yield* reconcileOverlays;
+              }),
+            ),
+          ),
+        ),
+      );
+      Electron.ipcMain.handle(
+        IpcChannels.COMPANION_PORTAL_INTERACTIVE_CHANNEL,
+        (event, raw: unknown) =>
+          runPromise(
+            decodePortalInteractiveInput(raw).pipe(
+              Effect.flatMap((input) =>
+                Effect.gen(function* () {
+                  if (!(yield* isCurrentMainSender(event.sender.id))) return;
+                  const portal = activePortal;
+                  if (!portal || portal.token !== input.token || !portal.window) return;
+                  if (!portal.window.isDestroyed()) {
+                    portal.window.setIgnoreMouseEvents(!input.interactive, { forward: true });
+                  }
+                }),
+              ),
+            ),
+          ),
+      );
+      Electron.ipcMain.handle(IpcChannels.COMPANION_PORTAL_CLOSE_CHANNEL, (event, raw: unknown) =>
+        runPromise(
+          decodePortalTokenInput(raw).pipe(
+            Effect.flatMap((input) =>
+              Effect.gen(function* () {
+                if (!(yield* isCurrentMainSender(event.sender.id))) return;
+                closePortalNow(input.token);
+              }),
+            ),
           ),
         ),
       );
@@ -969,6 +1374,11 @@ export const make = Effect.gen(function* () {
         Electron.ipcMain.removeHandler(IpcChannels.COMPANION_RESET_POSITIONS_CHANNEL);
         Electron.ipcMain.removeHandler(IpcChannels.COMPANION_SET_INTERACTIVE_CHANNEL);
         Electron.ipcMain.removeHandler(IpcChannels.COMPANION_POINTER_EVENT_CHANNEL);
+        Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_READY_CHANNEL);
+        Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_CLOSING_CHANNEL);
+        Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_METRICS_CHANNEL);
+        Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_INTERACTIVE_CHANNEL);
+        Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_CLOSE_CHANNEL);
         Electron.ipcMain.removeAllListeners(IpcChannels.COMPANION_GET_PROJECTION_CHANNEL);
         Electron.ipcMain.removeAllListeners(IpcChannels.COMPANION_READY_CHANNEL);
         Electron.ipcMain.removeAllListeners(IpcChannels.GET_MAIN_WINDOW_ATTENTION_STATE_CHANNEL);

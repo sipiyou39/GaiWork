@@ -195,6 +195,17 @@ article {
     visibility 0s;
 }
 
+.conversation-preview.is-composer-handoff {
+  pointer-events: none;
+  opacity: 0;
+  visibility: visible;
+  transform: translate3d(0, 0, 0) scale(1.015);
+  transition:
+    opacity 170ms ease,
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s;
+}
+
 .conversation-preview::after {
   position: absolute;
   inset: 0;
@@ -206,23 +217,11 @@ article {
 
 .conversation-preview-header {
   display: flex;
-  flex: 0 0 39px;
+  flex: 0 0 34px;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-start;
   min-width: 0;
-  padding: 10px 13px 4px 16px;
-}
-
-.conversation-preview-title {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  font-size: 15px;
-  font-weight: 650;
-  line-height: 20px;
-  letter-spacing: -0.012em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: 11px 16px 2px;
 }
 
 .conversation-preview-status-pill {
@@ -257,41 +256,12 @@ article {
   white-space: nowrap;
 }
 
-.conversation-preview-exchange {
-  display: grid;
-  flex: 1;
-  grid-template-rows: 32px 1fr;
-  min-height: 0;
-  padding: 0 14px 10px;
-}
-
-.conversation-preview-row {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
-  align-items: center;
-  min-width: 0;
-}
-
-.conversation-preview-row.is-assistant {
+.conversation-preview-response {
   position: relative;
-  align-items: start;
-  padding-top: 7px;
-  border-top: 1px solid rgb(255 255 255 / 8%);
-}
-
-.conversation-preview-speaker {
-  align-self: center;
-  color: rgb(200 200 207 / 45%);
-  font-size: 8.5px;
-  font-weight: 720;
-  line-height: 10px;
-  letter-spacing: 0.065em;
-}
-
-.conversation-preview-row.is-assistant .conversation-preview-speaker {
-  align-self: start;
-  padding-top: 2px;
-  color: rgb(137 183 255 / 86%);
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 7px 18px 2px;
 }
 
 .conversation-preview-message {
@@ -299,19 +269,95 @@ article {
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  color: rgb(230 230 235 / 72%);
-  font-size: 11.5px;
-  font-weight: 450;
-  line-height: 15px;
-  letter-spacing: -0.005em;
+  color: rgb(247 247 249 / 93%);
+  font-size: 13.5px;
+  font-weight: 470;
+  line-height: 19px;
+  letter-spacing: -0.008em;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 5;
 }
 
-.conversation-preview-row.is-assistant .conversation-preview-message {
-  color: rgb(243 243 246 / 91%);
-  -webkit-line-clamp: 2;
+.conversation-preview-response::after {
+  position: absolute;
+  inset: auto 0 0;
+  height: 20px;
+  pointer-events: none;
+  content: "";
+  background: linear-gradient(to bottom, transparent, rgb(29 29 32 / 78%));
+}
+
+.conversation-preview-footer {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 12px 10px 18px;
+}
+
+.conversation-preview-response-label {
+  color: rgb(210 210 217 / 38%);
+  font-size: 9px;
+  font-weight: 620;
+  line-height: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.conversation-preview-composer-button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  color: rgb(237 240 247 / 88%);
+  cursor: default;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 999px;
+  background: linear-gradient(145deg, rgb(255 255 255 / 10%), transparent 48%), rgb(67 72 84 / 68%);
+  box-shadow:
+    0 6px 18px rgb(0 0 0 / 25%),
+    inset 0 1px 0 rgb(255 255 255 / 10%);
+  transition:
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 150ms ease,
+    border-color 150ms ease,
+    background-color 150ms ease,
+    opacity 150ms ease;
+}
+
+.conversation-preview-composer-button:hover:not(:disabled) {
+  color: white;
+  border-color: rgb(119 166 255 / 48%);
+  background-color: rgb(67 113 207 / 78%);
+  transform: scale(1.06);
+}
+
+.conversation-preview-composer-button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.conversation-preview-composer-button:disabled {
+  color: rgb(216 216 224 / 30%);
+  opacity: 0.52;
+  border-color: rgb(255 255 255 / 7%);
+  background: rgb(255 255 255 / 3%);
+  box-shadow: none;
+}
+
+.conversation-preview-composer-icon {
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.55;
 }
 
 .conversation-preview.signal-working .conversation-preview-status-dot {
@@ -341,7 +387,7 @@ article {
   box-shadow: 0 0 8px rgb(255 92 83 / 54%);
 }
 
-.conversation-preview.has-new-content .conversation-preview-row.is-assistant {
+.conversation-preview.has-new-content .conversation-preview-response {
   animation: preview-content-arrived 500ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -432,24 +478,27 @@ article {
     background: rgb(0 0 0 / 4%);
   }
 
-  .conversation-preview-row.is-assistant {
-    border-top-color: rgb(0 0 0 / 8%);
-  }
-
-  .conversation-preview-speaker {
-    color: rgb(72 72 79 / 45%);
-  }
-
-  .conversation-preview-row.is-assistant .conversation-preview-speaker {
-    color: rgb(37 104 207 / 84%);
-  }
-
   .conversation-preview-message {
-    color: rgb(57 57 64 / 68%);
+    color: rgb(29 29 34 / 88%);
   }
 
-  .conversation-preview-row.is-assistant .conversation-preview-message {
-    color: rgb(29 29 34 / 88%);
+  .conversation-preview-response::after {
+    background: linear-gradient(to bottom, transparent, rgb(236 236 240 / 78%));
+  }
+
+  .conversation-preview-response-label {
+    color: rgb(63 63 71 / 38%);
+  }
+
+  .conversation-preview-composer-button {
+    color: rgb(44 50 62 / 82%);
+    border-color: rgb(255 255 255 / 82%);
+    background:
+      linear-gradient(145deg, rgb(255 255 255 / 88%), rgb(255 255 255 / 28%)),
+      rgb(218 221 228 / 76%);
+    box-shadow:
+      0 6px 16px rgb(45 50 64 / 15%),
+      inset 0 0 0 0.5px rgb(0 0 0 / 8%);
   }
 }
 
@@ -463,7 +512,7 @@ article {
   .preview-toggle-spinner,
   .preview-toggle.signal-completed-unseen,
   .conversation-preview-status-dot,
-  .conversation-preview.has-new-content .conversation-preview-row.is-assistant {
+  .conversation-preview.has-new-content .conversation-preview-response {
     animation: none !important;
   }
 }

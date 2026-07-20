@@ -28,6 +28,7 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
+import { useComposerSurfaceEnvironment } from "./ComposerSurfaceEnvironment";
 
 type ModelPickerItem = {
   slug: string;
@@ -89,6 +90,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
 }) {
+  const { window: surfaceWindow } = useComposerSurfaceEnvironment();
   const {
     keybindings: providedKeybindings,
     modelOptionsByInstance,
@@ -126,26 +128,26 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const handleSelectInstance = useCallback(
     (instanceId: ProviderInstanceId | "favorites") => {
       setSelectedInstanceId(instanceId);
-      window.requestAnimationFrame(() => {
+      surfaceWindow.requestAnimationFrame(() => {
         focusSearchInput();
       });
     },
-    [focusSearchInput],
+    [focusSearchInput, surfaceWindow],
   );
 
   useLayoutEffect(() => {
     focusSearchInput();
-    const frame = window.requestAnimationFrame(() => {
+    const frame = surfaceWindow.requestAnimationFrame(() => {
       focusSearchInput();
     });
-    const timeout = window.setTimeout(() => {
+    const timeout = surfaceWindow.setTimeout(() => {
       focusSearchInput();
     }, 0);
     return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(timeout);
+      surfaceWindow.cancelAnimationFrame(frame);
+      surfaceWindow.clearTimeout(timeout);
     };
-  }, [focusSearchInput]);
+  }, [focusSearchInput, surfaceWindow]);
 
   // Create a Set for efficient lookup. Favorites are keyed by
   // `${instanceId}:${slug}`; the storage schema widened from ProviderDriverKind
@@ -438,7 +440,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   );
   const updateModelListScrollFades = useCallback(() => {
     const scrollElement = modelListRef.current?.getScrollableNode();
-    if (!(scrollElement instanceof HTMLElement)) {
+    if (!(scrollElement instanceof surfaceWindow.HTMLElement)) {
       return;
     }
     const maxScrollOffset = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
@@ -459,7 +461,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       return EMPTY_MODEL_JUMP_LABELS;
     }
     const shortcutLabelOptions = {
-      platform: navigator.platform,
+      platform: surfaceWindow.navigator.platform,
       context: modelJumpShortcutContext,
     };
     const mapping = new Map<string, string>();
@@ -470,7 +472,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       }
     }
     return mapping.size > 0 ? mapping : EMPTY_MODEL_JUMP_LABELS;
-  }, [keybindings, modelJumpCommandByKey, modelJumpShortcutContext]);
+  }, [
+    keybindings,
+    modelJumpCommandByKey,
+    modelJumpShortcutContext,
+    surfaceWindow.navigator.platform,
+  ]);
 
   useEffect(() => {
     const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -479,7 +486,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       }
 
       const command = resolveShortcutCommand(event, keybindings, {
-        platform: navigator.platform,
+        platform: surfaceWindow.navigator.platform,
         context: modelJumpShortcutContext,
       });
       const jumpIndex = modelPickerJumpIndexFromCommand(command ?? "");
@@ -497,26 +504,26 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       handleModelSelect(slug, instanceId);
     };
 
-    window.addEventListener("keydown", onWindowKeyDown, true);
+    surfaceWindow.addEventListener("keydown", onWindowKeyDown, true);
 
     return () => {
-      window.removeEventListener("keydown", onWindowKeyDown, true);
+      surfaceWindow.removeEventListener("keydown", onWindowKeyDown, true);
     };
-  }, [handleModelSelect, keybindings, modelJumpModelKeys, modelJumpShortcutContext]);
+  }, [handleModelSelect, keybindings, modelJumpModelKeys, modelJumpShortcutContext, surfaceWindow]);
 
   useLayoutEffect(() => {
     setShowTopScrollFade(false);
     setShowBottomScrollFade(filteredModelKeys.length > 5);
     let nestedFrame = 0;
-    const frame = window.requestAnimationFrame(() => {
+    const frame = surfaceWindow.requestAnimationFrame(() => {
       updateModelListScrollFades();
-      nestedFrame = window.requestAnimationFrame(updateModelListScrollFades);
+      nestedFrame = surfaceWindow.requestAnimationFrame(updateModelListScrollFades);
     });
     return () => {
-      window.cancelAnimationFrame(frame);
-      window.cancelAnimationFrame(nestedFrame);
+      surfaceWindow.cancelAnimationFrame(frame);
+      surfaceWindow.cancelAnimationFrame(nestedFrame);
     };
-  }, [filteredModelKeys, updateModelListScrollFades]);
+  }, [filteredModelKeys, surfaceWindow, updateModelListScrollFades]);
 
   return (
     <TooltipProvider delay={0}>

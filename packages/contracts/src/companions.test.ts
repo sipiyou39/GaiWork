@@ -1,11 +1,18 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { CompanionPointerEvent, CompanionProjectionSnapshot } from "./companions.ts";
+import {
+  CompanionPointerEvent,
+  CompanionProjectionSnapshot,
+  DesktopCompanionPortalMetricsInput,
+  DesktopCompanionPortalRequest,
+} from "./companions.ts";
 
 describe("companion IPC contracts", () => {
   const decodeSnapshot = Schema.decodeUnknownSync(CompanionProjectionSnapshot);
   const decodePointerEvent = Schema.decodeUnknownSync(CompanionPointerEvent);
+  const decodePortalRequest = Schema.decodeUnknownSync(DesktopCompanionPortalRequest);
+  const decodePortalMetrics = Schema.decodeUnknownSync(DesktopCompanionPortalMetricsInput);
 
   it("limits a desktop snapshot to the nine global companion identities", () => {
     const projection = {
@@ -77,6 +84,40 @@ describe("companion IPC contracts", () => {
         screenX: 20,
         screenY: 20,
       }),
+    ).toThrow();
+  });
+
+  it("accepts only bounded, revisioned desktop composer portal requests", () => {
+    expect(
+      decodePortalRequest({
+        token: "portal-token",
+        frameName: "gaiwork-companion-blue-portal-token",
+        url: "gaiwork://app/companion-portal.html?token=portal-token",
+        companionId: "blue",
+        threadRef: { environmentId: "environment-test", threadId: "thread-test" },
+        layout: {
+          token: "portal-token",
+          revision: 0,
+          displayId: "display-test",
+          placement: "top",
+          cardX: 120,
+          cardY: 80,
+          cardWidth: 420,
+          cardHeight: 176,
+          compactCardX: 120,
+          compactCardY: 80,
+          compactCardWidth: 420,
+          compactCardHeight: 176,
+          workAreaWidth: 1_440,
+          workAreaHeight: 900,
+        },
+      }).layout.revision,
+    ).toBe(0);
+  });
+
+  it("rejects hostile or impossible desktop composer measurements", () => {
+    expect(() =>
+      decodePortalMetrics({ token: "portal-token", width: 20_000, height: 220 }),
     ).toThrow();
   });
 });

@@ -80,7 +80,7 @@ export type CompanionAssignment = typeof CompanionAssignment.Type;
 
 export const COMPANION_PREVIEW_TITLE_MAX_LENGTH = 96;
 export const COMPANION_PREVIEW_USER_MAX_LENGTH = 180;
-export const COMPANION_PREVIEW_ASSISTANT_MAX_LENGTH = 360;
+export const COMPANION_PREVIEW_ASSISTANT_MAX_LENGTH = 960;
 
 const CompanionPreviewText = (maximum: number) =>
   Schema.String.check(Schema.isTrimmed())
@@ -113,16 +113,23 @@ export const COMPANION_PREVIEW_PLACEMENTS = ["top", "bottom", "left", "right"] a
 export const CompanionPreviewPlacement = Schema.Literals(COMPANION_PREVIEW_PLACEMENTS);
 export type CompanionPreviewPlacement = typeof CompanionPreviewPlacement.Type;
 
+export const DESKTOP_COMPANION_CARD_MODES = [
+  "collapsed",
+  "preview",
+  "composer",
+  "submitting",
+] as const;
+export const DesktopCompanionCardMode = Schema.Literals(DESKTOP_COMPANION_CARD_MODES);
+export type DesktopCompanionCardMode = typeof DesktopCompanionCardMode.Type;
+
 /** Geometry and content exposed to the isolated desktop companion renderer. */
 export const DesktopCompanionPreviewPresentation = Schema.Struct({
-  expanded: Schema.Boolean,
+  mode: DesktopCompanionCardMode,
   placement: CompanionPreviewPlacement,
-  title: CompanionPreviewText(COMPANION_PREVIEW_TITLE_MAX_LENGTH),
-  userMessageId: Schema.NullOr(MessageId),
-  userText: Schema.NullOr(CompanionPreviewText(COMPANION_PREVIEW_USER_MAX_LENGTH)),
   assistantMessageId: Schema.NullOr(MessageId),
   assistantText: Schema.NullOr(CompanionPreviewText(COMPANION_PREVIEW_ASSISTANT_MAX_LENGTH)),
   assistantStreaming: Schema.Boolean,
+  composerAvailable: Schema.Boolean,
   cardX: NonNegativeInt,
   cardY: NonNegativeInt,
   cardWidth: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
@@ -130,6 +137,9 @@ export const DesktopCompanionPreviewPresentation = Schema.Struct({
   toggleX: NonNegativeInt,
   toggleY: NonNegativeInt,
   toggleSize: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1_000 })),
+  composerButtonX: NonNegativeInt,
+  composerButtonY: NonNegativeInt,
+  composerButtonSize: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1_000 })),
 });
 export type DesktopCompanionPreviewPresentation = typeof DesktopCompanionPreviewPresentation.Type;
 
@@ -175,9 +185,58 @@ export type MainWindowAttentionState = typeof MainWindowAttentionState.Type;
 
 export const CompanionPointerEvent = Schema.Struct({
   phase: Schema.Literals(["down", "move", "up", "cancel"]),
-  target: Schema.Literals(["companion", "preview", "toggle"]),
+  target: Schema.Literals(["companion", "preview", "toggle", "composer"]),
   presentationIndex: NonNegativeInt,
   screenX: Schema.Finite,
   screenY: Schema.Finite,
 });
 export type CompanionPointerEvent = typeof CompanionPointerEvent.Type;
+
+const DesktopCompanionPortalToken = TrimmedNonEmptyString;
+
+export const DesktopCompanionPortalLayout = Schema.Struct({
+  token: DesktopCompanionPortalToken,
+  revision: NonNegativeInt,
+  displayId: TrimmedNonEmptyString,
+  placement: CompanionPreviewPlacement,
+  cardX: NonNegativeInt,
+  cardY: NonNegativeInt,
+  cardWidth: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
+  cardHeight: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
+  compactCardX: NonNegativeInt,
+  compactCardY: NonNegativeInt,
+  compactCardWidth: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
+  compactCardHeight: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
+  workAreaWidth: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 20_000 })),
+  workAreaHeight: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 20_000 })),
+});
+export type DesktopCompanionPortalLayout = typeof DesktopCompanionPortalLayout.Type;
+
+export const DesktopCompanionPortalRequest = Schema.Struct({
+  token: DesktopCompanionPortalToken,
+  frameName: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  companionId: CompanionId,
+  threadRef: ScopedThreadRef,
+  layout: DesktopCompanionPortalLayout,
+});
+export type DesktopCompanionPortalRequest = typeof DesktopCompanionPortalRequest.Type;
+
+export const DesktopCompanionPortalTokenInput = Schema.Struct({
+  token: DesktopCompanionPortalToken,
+});
+export type DesktopCompanionPortalTokenInput = typeof DesktopCompanionPortalTokenInput.Type;
+
+export const DesktopCompanionPortalInteractiveInput = Schema.Struct({
+  token: DesktopCompanionPortalToken,
+  interactive: Schema.Boolean,
+});
+export type DesktopCompanionPortalInteractiveInput =
+  typeof DesktopCompanionPortalInteractiveInput.Type;
+
+export const DesktopCompanionPortalMetricsInput = Schema.Struct({
+  token: DesktopCompanionPortalToken,
+  width: Schema.Int.check(Schema.isBetween({ minimum: 220, maximum: 1_200 })),
+  height: Schema.Int.check(Schema.isBetween({ minimum: 136, maximum: 1_000 })),
+});
+export type DesktopCompanionPortalMetricsInput = typeof DesktopCompanionPortalMetricsInput.Type;

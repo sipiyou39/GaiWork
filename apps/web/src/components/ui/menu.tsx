@@ -5,12 +5,16 @@ import { ChevronRightIcon } from "lucide-react";
 import type * as React from "react";
 
 import { cn } from "~/lib/utils";
+import { useComposerPortalContainer } from "../chat/ComposerSurfaceEnvironment";
 
 const MenuCreateHandle = MenuPrimitive.createHandle;
 
 const Menu = MenuPrimitive.Root;
 
-const MenuPortal = MenuPrimitive.Portal;
+function MenuPortal(props: MenuPrimitive.Portal.Props) {
+  const portalContainer = useComposerPortalContainer();
+  return <MenuPrimitive.Portal container={portalContainer} {...props} />;
+}
 
 function MenuTrigger({ className, children, ...props }: MenuPrimitive.Trigger.Props) {
   return (
@@ -36,8 +40,9 @@ function MenuPopup({
   side?: MenuPrimitive.Positioner.Props["side"];
   anchor?: MenuPrimitive.Positioner.Props["anchor"];
 }) {
+  const portalContainer = useComposerPortalContainer();
   return (
-    <MenuPrimitive.Portal>
+    <MenuPrimitive.Portal container={portalContainer}>
       <MenuPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}

@@ -2,9 +2,11 @@ import type { CompanionPreviewPlacement } from "@t3tools/contracts";
 
 import type { Rectangle } from "./DesktopCompanionPositions.ts";
 
-export const COMPANION_PREVIEW_CARD_WIDTH = 360;
-export const COMPANION_PREVIEW_CARD_HEIGHT = 136;
+export const COMPANION_PREVIEW_CARD_WIDTH = 420;
+export const COMPANION_PREVIEW_CARD_HEIGHT = 176;
 export const COMPANION_PREVIEW_TOGGLE_SIZE = 34;
+export const COMPANION_COMPOSER_BUTTON_SIZE = 32;
+export const COMPANION_COMPOSER_BUTTON_INSET = 12;
 export const COMPANION_PREVIEW_SCREEN_MARGIN = 12;
 export const COMPANION_PREVIEW_PLACEMENT_HYSTERESIS = 24;
 const SPRITE_TOGGLE_GAP = 7;

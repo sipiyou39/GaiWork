@@ -18,6 +18,7 @@ import {
   getTriggerDisplayModelName,
 } from "./providerIconUtils";
 import type { ProviderInstanceEntry } from "../../providerInstances";
+import { useComposerSurfaceEnvironment } from "./ComposerSurfaceEnvironment";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /**
@@ -43,6 +44,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
 }) {
+  const { window: surfaceWindow, document: surfaceDocument } = useComposerSurfaceEnvironment();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
 
@@ -83,11 +85,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       return;
     }
 
-    const { documentElement, body } = document;
+    const { documentElement, body } = surfaceDocument;
     const previousDocumentOverscrollBehavior = documentElement.style.overscrollBehavior;
     const previousBodyOverflow = body.style.overflow;
     const previousBodyPaddingRight = body.style.paddingRight;
-    const scrollbarWidth = window.innerWidth - documentElement.clientWidth;
+    const scrollbarWidth = surfaceWindow.innerWidth - documentElement.clientWidth;
 
     documentElement.style.overscrollBehavior = "contain";
     body.style.overflow = "hidden";
@@ -96,7 +98,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     }
 
     const shouldAllowOverlayScroll = (target: EventTarget | null) => {
-      return target instanceof Element && target.closest("[data-model-picker-content]");
+      return (
+        target instanceof surfaceWindow.Element && target.closest("[data-model-picker-content]")
+      );
     };
     const preventBackgroundWheel = (event: WheelEvent) => {
       if (shouldAllowOverlayScroll(event.target)) {
@@ -111,20 +115,25 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       event.preventDefault();
     };
 
-    document.addEventListener("wheel", preventBackgroundWheel, { capture: true, passive: false });
-    document.addEventListener("touchmove", preventBackgroundTouchMove, {
+    surfaceDocument.addEventListener("wheel", preventBackgroundWheel, {
+      capture: true,
+      passive: false,
+    });
+    surfaceDocument.addEventListener("touchmove", preventBackgroundTouchMove, {
       capture: true,
       passive: false,
     });
 
     return () => {
-      document.removeEventListener("wheel", preventBackgroundWheel, { capture: true });
-      document.removeEventListener("touchmove", preventBackgroundTouchMove, { capture: true });
+      surfaceDocument.removeEventListener("wheel", preventBackgroundWheel, { capture: true });
+      surfaceDocument.removeEventListener("touchmove", preventBackgroundTouchMove, {
+        capture: true,
+      });
       documentElement.style.overscrollBehavior = previousDocumentOverscrollBehavior;
       body.style.overflow = previousBodyOverflow;
       body.style.paddingRight = previousBodyPaddingRight;
     };
-  }, [isMenuOpen]);
+  }, [isMenuOpen, surfaceDocument, surfaceWindow]);
 
   const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
     if (props.disabled) return;

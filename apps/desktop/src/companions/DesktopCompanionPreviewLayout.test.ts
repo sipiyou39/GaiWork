@@ -52,7 +52,7 @@ describe("desktop companion preview placement", () => {
   });
 
   it("uses 24-point hysteresis to avoid placement oscillation during a drag", () => {
-    const companionBounds = { x: 624, y: 200, width: 192, height: 208 };
+    const companionBounds = { x: 624, y: 250, width: 192, height: 208 };
     const withoutHistory = chooseCompanionPreviewGeometry({ companionBounds, workArea });
     const withHistory = chooseCompanionPreviewGeometry({
       companionBounds,

@@ -7,6 +7,7 @@ import * as React from "react";
 import { cn } from "~/lib/utils";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { useComposerPortalContainer } from "../chat/ComposerSurfaceEnvironment";
 
 const ComboboxContext = React.createContext<{
   chipsRef: React.RefObject<Element | null> | null;
@@ -155,10 +156,11 @@ function ComboboxPopup({
   anchor?: ComboboxPrimitive.Positioner.Props["anchor"];
 }) {
   const { chipsRef } = React.use(ComboboxContext);
+  const portalContainer = useComposerPortalContainer();
   const anchor = anchorProp ?? chipsRef;
 
   return (
-    <ComboboxPrimitive.Portal>
+    <ComboboxPrimitive.Portal container={portalContainer}>
       <ComboboxPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}

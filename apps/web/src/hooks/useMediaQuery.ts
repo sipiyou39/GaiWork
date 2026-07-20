@@ -61,23 +61,41 @@ export type MediaQueryInput = {
   pointer?: "coarse" | "fine";
 };
 
-export function useMediaQuery(query: BreakpointQuery | MediaQueryInput | (string & {})): boolean {
+function readMediaQueryList(
+  mediaWindow: Pick<Window, "matchMedia"> | null,
+  mediaQuery: string,
+): MediaQueryList | null {
+  if (mediaWindow === null) return null;
+  try {
+    // Electron can briefly expose a same-origin child WindowProxy before its
+    // hidden native window has a live visual viewport. During that handoff,
+    // Chromium returns null even though the DOM type declares MediaQueryList.
+    return mediaWindow.matchMedia(mediaQuery) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function useMediaQuery(
+  query: BreakpointQuery | MediaQueryInput | (string & {}),
+  targetWindow?: Pick<Window, "matchMedia">,
+): boolean {
   const mediaQuery = parseQuery(query);
+  const mediaWindow = targetWindow ?? (typeof window === "undefined" ? null : window);
 
   const subscribe = useCallback(
     (callback: () => void) => {
-      if (typeof window === "undefined") return () => {};
-      const mql = window.matchMedia(mediaQuery);
+      const mql = readMediaQueryList(mediaWindow, mediaQuery);
+      if (mql === null) return () => {};
       mql.addEventListener("change", callback);
       return () => mql.removeEventListener("change", callback);
     },
-    [mediaQuery],
+    [mediaQuery, mediaWindow],
   );
 
   const getSnapshot = useCallback(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia(mediaQuery).matches;
-  }, [mediaQuery]);
+    return readMediaQueryList(mediaWindow, mediaQuery)?.matches ?? false;
+  }, [mediaQuery, mediaWindow]);
 
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }

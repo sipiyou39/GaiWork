@@ -1,6 +1,7 @@
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 
 import { cn } from "~/lib/utils";
+import { useComposerPortalContainer } from "../chat/ComposerSurfaceEnvironment";
 
 const TooltipCreateHandle = TooltipPrimitive.createHandle;
 
@@ -26,8 +27,9 @@ function TooltipPopup({
   sideOffset?: TooltipPrimitive.Positioner.Props["sideOffset"];
   anchor?: TooltipPrimitive.Positioner.Props["anchor"];
 }) {
+  const portalContainer = useComposerPortalContainer();
   return (
-    <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Portal container={portalContainer}>
       <TooltipPrimitive.Positioner
         align={align}
         anchor={anchor}

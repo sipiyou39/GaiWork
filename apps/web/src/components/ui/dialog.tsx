@@ -5,12 +5,16 @@ import { XIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { useComposerPortalContainer } from "../chat/ComposerSurfaceEnvironment";
 
 const DialogCreateHandle = DialogPrimitive.createHandle;
 
 const Dialog = DialogPrimitive.Root;
 
-const DialogPortal = DialogPrimitive.Portal;
+function DialogPortal(props: DialogPrimitive.Portal.Props) {
+  const portalContainer = useComposerPortalContainer();
+  return <DialogPrimitive.Portal container={portalContainer} {...props} />;
+}
 
 function DialogTrigger(props: DialogPrimitive.Trigger.Props) {
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;

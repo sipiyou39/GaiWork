@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
@@ -21,6 +21,10 @@ const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
 const THREAD_SIDEBAR_MIN_WIDTH = 13 * 16;
 const THREAD_MAIN_CONTENT_MIN_WIDTH = 40 * 16;
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
+const CompanionPortalHost = lazy(async () => {
+  const module = await import("./companions/CompanionPortalHost");
+  return { default: module.CompanionPortalHost };
+});
 
 export function shouldNavigateToCompanionThread(
   current: ScopedThreadRef | null,
@@ -153,6 +157,11 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   return (
     <CompanionPickerProvider>
       <CompanionDesktopSync />
+      {isElectron ? (
+        <Suspense fallback={null}>
+          <CompanionPortalHost />
+        </Suspense>
+      ) : null}
       <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={macosWindowControlsStyle}>
         <Sidebar
           side="left"

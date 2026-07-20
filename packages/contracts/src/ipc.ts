@@ -106,6 +106,11 @@ import type {
   CompanionPointerEvent,
   CompanionProjectionSnapshot,
   DesktopCompanionOverlayPresentation,
+  DesktopCompanionPortalInteractiveInput,
+  DesktopCompanionPortalLayout,
+  DesktopCompanionPortalMetricsInput,
+  DesktopCompanionPortalRequest,
+  DesktopCompanionPortalTokenInput,
   MainWindowAttentionState,
 } from "./companions.ts";
 import type { ClientSettings, ServerSettings, ServerSettingsPatch } from "./settings.ts";
@@ -967,6 +972,14 @@ export interface DesktopCompanionsBridge {
   resetPositions: () => Promise<void>;
   onNavigateThread: (listener: (threadRef: ScopedThreadRef) => void) => () => void;
   onAcknowledgeThread: (listener: (threadRef: ScopedThreadRef) => void) => () => void;
+  onOpenComposer: (listener: (request: DesktopCompanionPortalRequest) => void) => () => void;
+  onPortalLayout: (listener: (layout: DesktopCompanionPortalLayout) => void) => () => void;
+  onCloseComposer: (listener: (input: DesktopCompanionPortalTokenInput) => void) => () => void;
+  portalReady: (input: DesktopCompanionPortalTokenInput) => Promise<void>;
+  portalClosing: (input: DesktopCompanionPortalTokenInput) => Promise<void>;
+  reportCardMetrics: (input: DesktopCompanionPortalMetricsInput) => Promise<void>;
+  setPortalInteractive: (input: DesktopCompanionPortalInteractiveInput) => Promise<void>;
+  closeComposer: (input: DesktopCompanionPortalTokenInput) => Promise<void>;
 }
 
 /** Minimal bridge exposed only inside a desktop companion window. */

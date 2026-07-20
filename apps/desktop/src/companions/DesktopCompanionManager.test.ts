@@ -81,7 +81,7 @@ describe("isolated companion presentation", () => {
       bounds: { x: 500, y: 500, width: 192, height: 208 },
       preview: {
         placement: "top" as const,
-        expanded: true,
+        mode: "preview" as const,
         toggleBounds: { x: 579, y: 458, width: 34, height: 34 },
         cardBounds: { x: 416, y: 314, width: 360, height: 136 },
       },
@@ -91,7 +91,7 @@ describe("isolated companion presentation", () => {
     assert.deepEqual(companionOverlayBounds([base], workArea), workArea);
     assert.deepEqual(
       companionOverlayBounds(
-        [{ ...base, preview: { ...base.preview, expanded: false } }],
+        [{ ...base, preview: { ...base.preview, mode: "collapsed" as const } }],
         workArea,
       ),
       workArea,
@@ -109,7 +109,7 @@ describe("isolated companion presentation", () => {
               bounds,
               preview: {
                 placement: "top",
-                expanded: cycle % 2 === 0,
+                mode: cycle % 2 === 0 ? "preview" : "collapsed",
                 toggleBounds: { x: -181, y: 579, width: 34, height: 34 },
                 cardBounds: { x: -344, y: 435, width: 360, height: 136 },
               },

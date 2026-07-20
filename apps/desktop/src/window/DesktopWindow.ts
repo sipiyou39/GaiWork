@@ -22,6 +22,10 @@ import {
   WINDOW_FULLSCREEN_STATE_CHANNEL,
 } from "../ipc/channels.ts";
 import * as PreviewManager from "../preview/Manager.ts";
+import {
+  attachDesktopCompanionPortalWindow,
+  authorizeDesktopCompanionPortalWindow,
+} from "../companions/DesktopCompanionPortalRegistry.ts";
 
 const TITLEBAR_HEIGHT = 40;
 const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linux
@@ -364,11 +368,47 @@ export const make = Effect.gen(function* () {
       void runPromise(electronMenu.popupTemplate({ window, template: menuTemplate }));
     });
 
-    window.webContents.setWindowOpenHandler(({ url }) => {
+    window.webContents.setWindowOpenHandler(({ url, frameName }) => {
+      const companionPortal = authorizeDesktopCompanionPortalWindow({ url, frameName });
+      if (companionPortal) {
+        return {
+          action: "allow",
+          overrideBrowserWindowOptions: {
+            ...companionPortal.bounds,
+            title: companionPortal.title,
+            show: false,
+            frame: false,
+            transparent: true,
+            hasShadow: false,
+            resizable: false,
+            minimizable: false,
+            maximizable: false,
+            fullscreenable: false,
+            movable: false,
+            focusable: true,
+            skipTaskbar: true,
+            type: "panel",
+            backgroundColor: "#00000000",
+            webPreferences: {
+              contextIsolation: true,
+              nodeIntegration: false,
+              sandbox: true,
+              backgroundThrottling: false,
+            },
+          },
+        };
+      }
       if (Option.isSome(ElectronShell.parseSafeExternalUrl(url))) {
         void runPromise(electronShell.openExternal(url));
       }
       return { action: "deny" };
+    });
+    window.webContents.on("did-create-window", (childWindow, details) => {
+      const attached = attachDesktopCompanionPortalWindow({
+        url: details.url,
+        window: childWindow,
+      });
+      if (!attached && !childWindow.isDestroyed()) childWindow.destroy();
     });
     window.webContents.on("will-navigate", (event, url) => {
       if (

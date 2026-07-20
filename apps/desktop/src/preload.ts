@@ -17,11 +17,26 @@ type CompanionNavigateListener = Parameters<
 type CompanionAcknowledgeListener = Parameters<
   NonNullable<NonNullable<DesktopBridge["companions"]>["onAcknowledgeThread"]>
 >[0];
+type CompanionOpenComposerListener = Parameters<
+  NonNullable<NonNullable<DesktopBridge["companions"]>["onOpenComposer"]>
+>[0];
+type CompanionPortalLayoutListener = Parameters<
+  NonNullable<NonNullable<DesktopBridge["companions"]>["onPortalLayout"]>
+>[0];
+type CompanionCloseComposerListener = Parameters<
+  NonNullable<NonNullable<DesktopBridge["companions"]>["onCloseComposer"]>
+>[0];
 
 const companionNavigateListeners = new Set<CompanionNavigateListener>();
 let pendingCompanionNavigation: Parameters<CompanionNavigateListener>[0] | null = null;
 const companionAcknowledgeListeners = new Set<CompanionAcknowledgeListener>();
 const pendingCompanionAcknowledgements: Array<Parameters<CompanionAcknowledgeListener>[0]> = [];
+const companionOpenComposerListeners = new Set<CompanionOpenComposerListener>();
+let pendingCompanionOpenComposer: Parameters<CompanionOpenComposerListener>[0] | null = null;
+const companionPortalLayoutListeners = new Set<CompanionPortalLayoutListener>();
+let pendingCompanionPortalLayout: Parameters<CompanionPortalLayoutListener>[0] | null = null;
+const companionCloseComposerListeners = new Set<CompanionCloseComposerListener>();
+const pendingCompanionPortalCloses: Array<Parameters<CompanionCloseComposerListener>[0]> = [];
 
 // Register during preload so navigation sent immediately after a recreated
 // renderer finishes loading cannot be lost before React mounts its listener.
@@ -43,6 +58,36 @@ ipcRenderer.on(IpcChannels.COMPANION_ACKNOWLEDGE_THREAD_CHANNEL, (_event, thread
     return;
   }
   for (const listener of companionAcknowledgeListeners) listener(target);
+});
+
+ipcRenderer.on(IpcChannels.COMPANION_OPEN_COMPOSER_CHANNEL, (_event, request: unknown) => {
+  if (typeof request !== "object" || request === null) return;
+  const target = request as Parameters<CompanionOpenComposerListener>[0];
+  if (companionOpenComposerListeners.size === 0) {
+    pendingCompanionOpenComposer = target;
+    return;
+  }
+  for (const listener of companionOpenComposerListeners) listener(target);
+});
+
+ipcRenderer.on(IpcChannels.COMPANION_PORTAL_LAYOUT_CHANNEL, (_event, layout: unknown) => {
+  if (typeof layout !== "object" || layout === null) return;
+  const target = layout as Parameters<CompanionPortalLayoutListener>[0];
+  if (companionPortalLayoutListeners.size === 0) {
+    pendingCompanionPortalLayout = target;
+    return;
+  }
+  for (const listener of companionPortalLayoutListeners) listener(target);
+});
+
+ipcRenderer.on(IpcChannels.COMPANION_CLOSE_COMPOSER_CHANNEL, (_event, input: unknown) => {
+  if (typeof input !== "object" || input === null) return;
+  const target = input as Parameters<CompanionCloseComposerListener>[0];
+  if (companionCloseComposerListeners.size === 0) {
+    pendingCompanionPortalCloses.push(target);
+    return;
+  }
+  for (const listener of companionCloseComposerListeners) listener(target);
 });
 
 function unwrapEnsureSshEnvironmentResult(result: unknown) {
@@ -227,6 +272,43 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         companionAcknowledgeListeners.delete(listener);
       };
     },
+    onOpenComposer: (listener) => {
+      companionOpenComposerListeners.add(listener);
+      if (pendingCompanionOpenComposer !== null) {
+        const pending = pendingCompanionOpenComposer;
+        pendingCompanionOpenComposer = null;
+        listener(pending);
+      }
+      return () => {
+        companionOpenComposerListeners.delete(listener);
+      };
+    },
+    onPortalLayout: (listener) => {
+      companionPortalLayoutListeners.add(listener);
+      if (pendingCompanionPortalLayout !== null) {
+        const pending = pendingCompanionPortalLayout;
+        pendingCompanionPortalLayout = null;
+        listener(pending);
+      }
+      return () => {
+        companionPortalLayoutListeners.delete(listener);
+      };
+    },
+    onCloseComposer: (listener) => {
+      companionCloseComposerListeners.add(listener);
+      for (const pending of pendingCompanionPortalCloses.splice(0)) listener(pending);
+      return () => {
+        companionCloseComposerListeners.delete(listener);
+      };
+    },
+    portalReady: (input) => ipcRenderer.invoke(IpcChannels.COMPANION_PORTAL_READY_CHANNEL, input),
+    portalClosing: (input) =>
+      ipcRenderer.invoke(IpcChannels.COMPANION_PORTAL_CLOSING_CHANNEL, input),
+    reportCardMetrics: (input) =>
+      ipcRenderer.invoke(IpcChannels.COMPANION_PORTAL_METRICS_CHANNEL, input),
+    setPortalInteractive: (input) =>
+      ipcRenderer.invoke(IpcChannels.COMPANION_PORTAL_INTERACTIVE_CHANNEL, input),
+    closeComposer: (input) => ipcRenderer.invoke(IpcChannels.COMPANION_PORTAL_CLOSE_CHANNEL, input),
   },
   preview: {
     createTab: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_CREATE_TAB_CHANNEL, { tabId }),

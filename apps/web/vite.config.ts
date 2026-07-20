@@ -176,6 +176,7 @@ export default defineConfig(() => {
         input: {
           main: "index.html",
           companion: "companion.html",
+          companionPortal: "companion-portal.html",
         },
       },
     },

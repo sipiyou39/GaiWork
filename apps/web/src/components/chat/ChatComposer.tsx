@@ -118,6 +118,7 @@ import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelS
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
+import { useComposerSurfaceEnvironment } from "./ComposerSurfaceEnvironment";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import {
   deriveLatestContextWindowSnapshot,
@@ -623,6 +624,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setThreadError,
     onExpandImage,
   } = props;
+  const { window: surfaceWindow, document: surfaceDocument } = useComposerSurfaceEnvironment();
 
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
@@ -896,7 +898,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
-  const isMobileViewport = useMediaQuery("max-sm");
+  const isMobileViewport = useMediaQuery("max-sm", surfaceWindow);
   const isComposerCollapsedMobile =
     isMobileViewport && !forceExpandedOnMobile && !isComposerFocused;
 
@@ -1345,9 +1347,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const initialCompactness = measureFooterCompactness();
     setIsComposerPrimaryActionsCompact(initialCompactness.primaryActionsCompact);
     setIsComposerFooterCompact(initialCompactness.footerCompact);
-    if (typeof ResizeObserver === "undefined") return;
+    if (typeof surfaceWindow.ResizeObserver !== "function") return;
 
-    const observer = new ResizeObserver(() => {
+    const observer = new surfaceWindow.ResizeObserver(() => {
       const nextCompactness = measureFooterCompactness();
       setIsComposerPrimaryActionsCompact((previous) =>
         previous === nextCompactness.primaryActionsCompact
@@ -1363,7 +1365,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return () => {
       observer.disconnect();
     };
-  }, [activeThreadId, composerFooterActionLayoutKey, composerFooterHasWideActions]);
+  }, [activeThreadId, composerFooterActionLayoutKey, composerFooterHasWideActions, surfaceWindow]);
 
   // ------------------------------------------------------------------
   // Image persist effect
@@ -1521,7 +1523,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setComposerCursor(nextCursor);
       setComposerTrigger(detectComposerTrigger(next.text, nextExpandedCursor));
       if (options?.focusEditorAfterReplace !== false) {
-        window.requestAnimationFrame(() => {
+        surfaceWindow.requestAnimationFrame(() => {
           composerEditorRef.current?.focusAt(nextCursor);
         });
       }
@@ -1533,6 +1535,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onChangeActivePendingUserInputCustomAnswer,
       promptRef,
       setPrompt,
+      surfaceWindow,
     ],
   );
 
@@ -1569,7 +1572,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (item: ComposerCommandItem) => {
       if (composerSelectLockRef.current) return;
       composerSelectLockRef.current = true;
-      window.requestAnimationFrame(() => {
+      surfaceWindow.requestAnimationFrame(() => {
         composerSelectLockRef.current = false;
       });
       const { snapshot, trigger } = resolveActiveComposerTrigger();
@@ -1650,7 +1653,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
     },
-    [applyPromptReplacement, handleInteractionModeChange, resolveActiveComposerTrigger],
+    [
+      applyPromptReplacement,
+      handleInteractionModeChange,
+      resolveActiveComposerTrigger,
+      surfaceWindow,
+    ],
   );
 
   const onComposerMenuItemHighlighted = useCallback(
@@ -1681,15 +1689,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const blurMobileComposerAfterSend = useCallback(() => {
     if (!isMobileViewport) return;
     if (composerBlurFrameRef.current !== null) {
-      window.cancelAnimationFrame(composerBlurFrameRef.current);
+      surfaceWindow.cancelAnimationFrame(composerBlurFrameRef.current);
       composerBlurFrameRef.current = null;
     }
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement) {
+    const activeElement = surfaceDocument.activeElement;
+    if (activeElement instanceof surfaceWindow.HTMLElement) {
       activeElement.blur();
     }
     setIsComposerFocused(false);
-  }, [isMobileViewport]);
+  }, [isMobileViewport, surfaceDocument, surfaceWindow]);
 
   const shouldBlurMobileComposerOnSubmit = useCallback(() => {
     if (!isMobileViewport) return false;
@@ -1720,26 +1728,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {
-      window.cancelAnimationFrame(composerBlurFrameRef.current);
+      surfaceWindow.cancelAnimationFrame(composerBlurFrameRef.current);
       composerBlurFrameRef.current = null;
     }
     if (mobileComposerExpandFrameRef.current !== null) {
-      window.cancelAnimationFrame(mobileComposerExpandFrameRef.current);
+      surfaceWindow.cancelAnimationFrame(mobileComposerExpandFrameRef.current);
     }
     if (mobileComposerExpandReleaseFrameRef.current !== null) {
-      window.cancelAnimationFrame(mobileComposerExpandReleaseFrameRef.current);
+      surfaceWindow.cancelAnimationFrame(mobileComposerExpandReleaseFrameRef.current);
     }
     mobileComposerExpandInFlightRef.current = true;
     setIsComposerFocused(true);
-    mobileComposerExpandFrameRef.current = window.requestAnimationFrame(() => {
+    mobileComposerExpandFrameRef.current = surfaceWindow.requestAnimationFrame(() => {
       mobileComposerExpandFrameRef.current = null;
       composerEditorRef.current?.focusAtEnd();
-      mobileComposerExpandReleaseFrameRef.current = window.requestAnimationFrame(() => {
+      mobileComposerExpandReleaseFrameRef.current = surfaceWindow.requestAnimationFrame(() => {
         mobileComposerExpandReleaseFrameRef.current = null;
         mobileComposerExpandInFlightRef.current = false;
       });
     });
-  }, []);
+  }, [surfaceWindow]);
 
   // ------------------------------------------------------------------
   // Callbacks: command key
@@ -1862,7 +1870,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (!event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
     const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    if (nextTarget instanceof surfaceWindow.Node && event.currentTarget.contains(nextTarget))
+      return;
     dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
     if (dragDepthRef.current === 0) {
       setIsDragOverComposer(false);
@@ -1892,42 +1901,45 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     }
     if (composerBlurFrameRef.current !== null) {
-      window.cancelAnimationFrame(composerBlurFrameRef.current);
+      surfaceWindow.cancelAnimationFrame(composerBlurFrameRef.current);
     }
-    composerBlurFrameRef.current = window.requestAnimationFrame(() => {
+    composerBlurFrameRef.current = surfaceWindow.requestAnimationFrame(() => {
       composerBlurFrameRef.current = null;
       if (mobileComposerExpandInFlightRef.current) {
         return;
       }
       const composerSurface = composerSurfaceRef.current;
-      const activeElement = document.activeElement;
-      if (activeElement instanceof Element && isInsideComposerFloatingLayer(activeElement)) {
+      const activeElement = surfaceDocument.activeElement;
+      if (
+        activeElement instanceof surfaceWindow.Element &&
+        isInsideComposerFloatingLayer(activeElement)
+      ) {
         return;
       }
       if (
         composerSurface &&
-        activeElement instanceof Node &&
+        activeElement instanceof surfaceWindow.Node &&
         composerSurface.contains(activeElement)
       ) {
         return;
       }
       setIsComposerFocused(false);
     });
-  }, [isMobileViewport]);
+  }, [isMobileViewport, surfaceDocument, surfaceWindow]);
 
   useEffect(() => {
     return () => {
       if (composerBlurFrameRef.current !== null) {
-        window.cancelAnimationFrame(composerBlurFrameRef.current);
+        surfaceWindow.cancelAnimationFrame(composerBlurFrameRef.current);
       }
       if (mobileComposerExpandFrameRef.current !== null) {
-        window.cancelAnimationFrame(mobileComposerExpandFrameRef.current);
+        surfaceWindow.cancelAnimationFrame(mobileComposerExpandFrameRef.current);
       }
       if (mobileComposerExpandReleaseFrameRef.current !== null) {
-        window.cancelAnimationFrame(mobileComposerExpandReleaseFrameRef.current);
+        surfaceWindow.cancelAnimationFrame(mobileComposerExpandReleaseFrameRef.current);
       }
     };
-  }, []);
+  }, [surfaceWindow]);
 
   // ------------------------------------------------------------------
   // Imperative handle
@@ -2020,7 +2032,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         promptRef.current = insertion.prompt;
         setComposerCursor(nextCollapsedCursor);
         setComposerTrigger(detectComposerTrigger(insertion.prompt, insertion.cursor));
-        window.requestAnimationFrame(() => {
+        surfaceWindow.requestAnimationFrame(() => {
           composerEditorRef.current?.focusAt(nextCollapsedCursor);
         });
       },
@@ -2066,6 +2078,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedPromptEffort,
       selectedProvider,
       selectedProviderModels,
+      surfaceWindow,
     ],
   );
 
@@ -2101,13 +2114,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             const activeElement = event.target;
             if (
               isComposerCollapsedMobile &&
-              activeElement instanceof HTMLElement &&
+              activeElement instanceof surfaceWindow.HTMLElement &&
               activeElement.closest('[data-chat-composer-collapsed-controls="true"]')
             ) {
               return;
             }
             if (composerBlurFrameRef.current !== null) {
-              window.cancelAnimationFrame(composerBlurFrameRef.current);
+              surfaceWindow.cancelAnimationFrame(composerBlurFrameRef.current);
               composerBlurFrameRef.current = null;
             }
             setIsComposerFocused(true);

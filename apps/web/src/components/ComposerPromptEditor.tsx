@@ -78,6 +78,7 @@ import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTermin
 import { formatProviderSkillDisplayName } from "~/providerSkillPresentation";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { registerComposerInlineTokenPaste } from "./composerInlineTokenPaste";
+import { useComposerSurfaceEnvironment } from "./chat/ComposerSurfaceEnvironment";
 
 const COMPOSER_EDITOR_HMR_KEY = `composer-editor-${Math.random().toString(36).slice(2)}`;
 const SURROUND_SYMBOLS: [string, string][] = [
@@ -132,7 +133,8 @@ const ComposerTerminalContextActionsContext = createContext<{
 });
 
 function ComposerMentionDecorator(props: { path: string }) {
-  const theme = resolvedThemeFromDocument();
+  const { document: surfaceDocument } = useComposerSurfaceEnvironment();
+  const theme = resolvedThemeFromDocument(surfaceDocument);
   const chip = (
     <span
       className={FILE_TAG_CHIP_CLASS_NAME}
@@ -434,8 +436,8 @@ function isComposerInlineTokenNode(candidate: unknown): candidate is ComposerInl
   );
 }
 
-function resolvedThemeFromDocument(): "light" | "dark" {
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+function resolvedThemeFromDocument(targetDocument: Document = document): "light" | "dark" {
+  return targetDocument.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
 function terminalContextSignature(contexts: ReadonlyArray<TerminalContextDraft>): string {
@@ -1032,9 +1034,9 @@ function ComposerHomeEndKeyPlugin() {
     return editor.registerCommand(
       KEY_DOWN_COMMAND,
       (event) => {
-        if (!isMacPlatform(navigator.platform)) {
-          return false;
-        }
+        const rootElement = editor.getRootElement();
+        const ownerWindow = rootElement?.ownerDocument.defaultView;
+        if (!isMacPlatform(ownerWindow?.navigator.platform ?? navigator.platform)) return false;
         if (event.key !== "Home" && event.key !== "End") {
           return false;
         }
@@ -1042,8 +1044,7 @@ function ComposerHomeEndKeyPlugin() {
           return false;
         }
 
-        const rootElement = editor.getRootElement();
-        const selection = window.getSelection();
+        const selection = ownerWindow?.getSelection();
         const anchorNode = selection?.anchorNode;
         if (!rootElement || !selection || !anchorNode || !rootElement.contains(anchorNode)) {
           return false;
@@ -1518,7 +1519,9 @@ function ComposerPromptEditorInner({
     skillsSignatureRef.current = skillsSignature;
 
     const rootElement = editor.getRootElement();
-    const isFocused = Boolean(rootElement && document.activeElement === rootElement);
+    const isFocused = Boolean(
+      rootElement && rootElement.ownerDocument.activeElement === rootElement,
+    );
     if (previousSnapshot.value === value && !contextsChanged && !skillsChanged && !isFocused) {
       return;
     }
