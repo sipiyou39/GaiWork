@@ -43,32 +43,82 @@ describe("isolated companion presentation", () => {
           baseAnimation: "working",
           accessibleLabel: "Secret thread: Working",
           showOnDesktop: true,
+          preview: null,
         },
         bounds: { x: 110, y: 220, width: 192, height: 208 },
+        preview: null,
         overlayBounds: { x: 10, y: 20, width: 1200, height: 800 },
       }),
       {
         companionId: "blue",
+        signal: "working",
         baseAnimation: "working",
         accessibleLabel: "Secret thread: Working",
         x: 100,
         y: 200,
         width: 192,
         height: 208,
+        preview: null,
       },
     );
   });
 
-  it("uses only the compact union of companion rectangles at rest", () => {
+  it("keeps a stable work-area overlay at rest", () => {
     assert.deepEqual(
       companionOverlayBounds(
         [
-          { bounds: { x: 100, y: 200, width: 192, height: 208 } },
-          { bounds: { x: 300, y: 200, width: 192, height: 208 } },
+          { bounds: { x: 100, y: 200, width: 192, height: 208 }, preview: null },
+          { bounds: { x: 300, y: 200, width: 192, height: 208 }, preview: null },
         ],
         { x: 0, y: 24, width: 1200, height: 800 },
       ),
-      { x: 100, y: 200, width: 392, height: 208 },
+      { x: 0, y: 24, width: 1200, height: 800 },
     );
+  });
+
+  it("does not resize the native overlay when a preview collapses", () => {
+    const base = {
+      bounds: { x: 500, y: 500, width: 192, height: 208 },
+      preview: {
+        placement: "top" as const,
+        expanded: true,
+        toggleBounds: { x: 579, y: 458, width: 34, height: 34 },
+        cardBounds: { x: 416, y: 314, width: 360, height: 136 },
+      },
+    };
+
+    const workArea = { x: 0, y: 24, width: 1_200, height: 800 };
+    assert.deepEqual(companionOverlayBounds([base], workArea), workArea);
+    assert.deepEqual(
+      companionOverlayBounds(
+        [{ ...base, preview: { ...base.preview, expanded: false } }],
+        workArea,
+      ),
+      workArea,
+    );
+  });
+
+  it("keeps identical native bounds across repeated preview transitions", () => {
+    const workArea = { x: -1_440, y: 24, width: 1_440, height: 876 };
+    const bounds = { x: -260, y: 620, width: 192, height: 208 };
+    for (let cycle = 0; cycle < 100; cycle += 1) {
+      assert.deepEqual(
+        companionOverlayBounds(
+          [
+            {
+              bounds,
+              preview: {
+                placement: "top",
+                expanded: cycle % 2 === 0,
+                toggleBounds: { x: -181, y: 579, width: 34, height: 34 },
+                cardBounds: { x: -344, y: 435, width: 360, height: 136 },
+              },
+            },
+          ],
+          workArea,
+        ),
+        workArea,
+      );
+    }
   });
 });

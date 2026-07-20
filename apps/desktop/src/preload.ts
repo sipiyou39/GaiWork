@@ -14,9 +14,14 @@ exposeClerkBridge({ passkeys: true });
 type CompanionNavigateListener = Parameters<
   NonNullable<NonNullable<DesktopBridge["companions"]>["onNavigateThread"]>
 >[0];
+type CompanionAcknowledgeListener = Parameters<
+  NonNullable<NonNullable<DesktopBridge["companions"]>["onAcknowledgeThread"]>
+>[0];
 
 const companionNavigateListeners = new Set<CompanionNavigateListener>();
 let pendingCompanionNavigation: Parameters<CompanionNavigateListener>[0] | null = null;
+const companionAcknowledgeListeners = new Set<CompanionAcknowledgeListener>();
+const pendingCompanionAcknowledgements: Array<Parameters<CompanionAcknowledgeListener>[0]> = [];
 
 // Register during preload so navigation sent immediately after a recreated
 // renderer finishes loading cannot be lost before React mounts its listener.
@@ -28,6 +33,16 @@ ipcRenderer.on(IpcChannels.COMPANION_NAVIGATE_THREAD_CHANNEL, (_event, threadRef
     return;
   }
   for (const listener of companionNavigateListeners) listener(target);
+});
+
+ipcRenderer.on(IpcChannels.COMPANION_ACKNOWLEDGE_THREAD_CHANNEL, (_event, threadRef: unknown) => {
+  if (typeof threadRef !== "object" || threadRef === null) return;
+  const target = threadRef as Parameters<CompanionAcknowledgeListener>[0];
+  if (companionAcknowledgeListeners.size === 0) {
+    pendingCompanionAcknowledgements.push(target);
+    return;
+  }
+  for (const listener of companionAcknowledgeListeners) listener(target);
 });
 
 function unwrapEnsureSshEnvironmentResult(result: unknown) {
@@ -197,6 +212,19 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       }
       return () => {
         companionNavigateListeners.delete(listener);
+      };
+    },
+    onAcknowledgeThread: (listener) => {
+      companionAcknowledgeListeners.add(listener);
+      const pending = pendingCompanionAcknowledgements.splice(0);
+      if (pending.length > 0) {
+        queueMicrotask(() => {
+          if (!companionAcknowledgeListeners.has(listener)) return;
+          for (const threadRef of pending) listener(threadRef);
+        });
+      }
+      return () => {
+        companionAcknowledgeListeners.delete(listener);
       };
     },
   },

@@ -142,6 +142,14 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     });
   }, [acknowledgeCompanionCompletion, markThreadVisited, navigate, router]);
 
+  useEffect(() => {
+    const onAcknowledgeThread = window.desktopBridge?.companions?.onAcknowledgeThread;
+    if (typeof onAcknowledgeThread !== "function") return;
+    return onAcknowledgeThread((threadRef) => {
+      acknowledgeCompanionCompletion(threadRef);
+    });
+  }, [acknowledgeCompanionCompletion]);
+
   return (
     <CompanionPickerProvider>
       <CompanionDesktopSync />

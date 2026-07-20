@@ -966,6 +966,7 @@ export interface DesktopCompanionsBridge {
   syncProjection: (snapshot: CompanionProjectionSnapshot) => Promise<void>;
   resetPositions: () => Promise<void>;
   onNavigateThread: (listener: (threadRef: ScopedThreadRef) => void) => () => void;
+  onAcknowledgeThread: (listener: (threadRef: ScopedThreadRef) => void) => () => void;
 }
 
 /** Minimal bridge exposed only inside a desktop companion window. */

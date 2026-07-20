@@ -16,6 +16,7 @@ describe("companion IPC contracts", () => {
       baseAnimation: "idle",
       accessibleLabel: "Test thread: Idle",
       showOnDesktop: true,
+      preview: null,
     };
 
     expect(() =>
@@ -36,6 +37,13 @@ describe("companion IPC contracts", () => {
         companions: [],
       }).desktopScalePercent,
     ).toBe(100);
+    expect(
+      decodeSnapshot({
+        sourceEpoch: "epoch-test",
+        revision: 0,
+        companions: [],
+      }).desktopPreviewsEnabled,
+    ).toBe(true);
   });
 
   it("rejects desktop scales outside the supported range", () => {
@@ -53,8 +61,20 @@ describe("companion IPC contracts", () => {
     expect(() =>
       decodePointerEvent({
         phase: "move",
+        target: "companion",
         presentationIndex: 0,
         screenX: Number.NaN,
+        screenY: 20,
+      }),
+    ).toThrow();
+  });
+
+  it("requires the isolated renderer to identify its pointer surface", () => {
+    expect(() =>
+      decodePointerEvent({
+        phase: "up",
+        presentationIndex: 0,
+        screenX: 20,
         screenY: 20,
       }),
     ).toThrow();

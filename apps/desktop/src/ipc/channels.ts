@@ -11,6 +11,7 @@ export const MAIN_WINDOW_ATTENTION_STATE_CHANNEL = "desktop:main-window-attentio
 export const COMPANION_SYNC_PROJECTION_CHANNEL = "desktop:companions-sync-projection";
 export const COMPANION_RESET_POSITIONS_CHANNEL = "desktop:companions-reset-positions";
 export const COMPANION_NAVIGATE_THREAD_CHANNEL = "desktop:companions-navigate-thread";
+export const COMPANION_ACKNOWLEDGE_THREAD_CHANNEL = "desktop:companions-acknowledge-thread";
 export const COMPANION_GET_PROJECTION_CHANNEL = "desktop:companion-get-projection";
 export const COMPANION_PROJECTION_CHANNEL = "desktop:companion-projection";
 export const COMPANION_READY_CHANNEL = "desktop:companion-ready";

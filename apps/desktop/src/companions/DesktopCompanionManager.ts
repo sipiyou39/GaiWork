@@ -1,4 +1,5 @@
 import {
+  COMPANION_PREVIEW_TITLE_MAX_LENGTH,
   CompanionPointerEvent,
   CompanionProjectionSnapshot,
   DEFAULT_COMPANION_DESKTOP_SCALE_PERCENT,
@@ -8,7 +9,10 @@ import {
   type DesktopCompanionPresentation,
   type MainWindowAttentionState as MainWindowAttentionStateType,
 } from "@t3tools/contracts";
-import { companionDisplayDimensions } from "@t3tools/client-runtime/companions";
+import {
+  compactConversationPreviewText,
+  companionDisplayDimensions,
+} from "@t3tools/client-runtime/companions";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -33,6 +37,11 @@ import {
   positionFromBounds,
   type Rectangle,
 } from "./DesktopCompanionPositions.ts";
+import {
+  chooseCompanionPreviewGeometry,
+  rectangleContainsPoint,
+  type DesktopCompanionPreviewGeometry,
+} from "./DesktopCompanionPreviewLayout.ts";
 
 const DRAG_THRESHOLD = 6;
 const MIN_MOVE_INTERVAL_MS = 1_000 / 60;
@@ -43,6 +52,11 @@ const decodeInteractive = Schema.decodeUnknownEffect(Schema.Boolean);
 interface CompanionLayout {
   projection: CompanionProjection;
   bounds: Rectangle;
+  preview:
+    | (DesktopCompanionPreviewGeometry & {
+        readonly expanded: boolean;
+      })
+    | null;
 }
 
 interface DragState {
@@ -62,6 +76,10 @@ interface OverlayWindowEntry {
   overlayBounds: Electron.Rectangle;
   layouts: CompanionLayout[];
   drag: DragState | null;
+  press: {
+    readonly companionId: CompanionId;
+    readonly target: CompanionPointerEvent["target"];
+  } | null;
 }
 
 interface OverlayGroup {
@@ -73,6 +91,12 @@ interface AcceptedSnapshot {
   readonly sourceEpoch: string;
   readonly revision: number;
   readonly retiredEpochs: ReadonlySet<string>;
+}
+
+interface PreviewSessionState {
+  readonly threadKey: string;
+  expanded: boolean;
+  placement?: DesktopCompanionPreviewGeometry["placement"] | undefined;
 }
 
 export function acceptCompanionSnapshot(
@@ -116,37 +140,57 @@ function companionUrl(isDevelopment: boolean): string {
 export function desktopCompanionPresentation(input: {
   readonly projection: CompanionProjection;
   readonly bounds: Rectangle;
+  readonly preview: CompanionLayout["preview"];
   readonly overlayBounds: Rectangle;
 }): DesktopCompanionPresentation {
+  const conversationPreview = input.projection.preview;
+  const preview =
+    input.preview === null || conversationPreview === null
+      ? null
+      : {
+          expanded: input.preview.expanded,
+          placement: input.preview.placement,
+          title:
+            compactConversationPreviewText(
+              input.projection.threadTitle,
+              COMPANION_PREVIEW_TITLE_MAX_LENGTH,
+            ) ?? "Untitled conversation",
+          ...conversationPreview,
+          cardX: Math.max(0, Math.round(input.preview.cardBounds.x - input.overlayBounds.x)),
+          cardY: Math.max(0, Math.round(input.preview.cardBounds.y - input.overlayBounds.y)),
+          cardWidth: Math.round(input.preview.cardBounds.width),
+          cardHeight: Math.round(input.preview.cardBounds.height),
+          toggleX: Math.max(0, Math.round(input.preview.toggleBounds.x - input.overlayBounds.x)),
+          toggleY: Math.max(0, Math.round(input.preview.toggleBounds.y - input.overlayBounds.y)),
+          toggleSize: Math.round(input.preview.toggleBounds.width),
+        };
   return {
     companionId: input.projection.companionId,
+    signal: input.projection.signal,
     baseAnimation: input.projection.baseAnimation,
     accessibleLabel: input.projection.accessibleLabel,
     x: Math.max(0, Math.round(input.bounds.x - input.overlayBounds.x)),
     y: Math.max(0, Math.round(input.bounds.y - input.overlayBounds.y)),
     width: input.bounds.width,
     height: input.bounds.height,
+    preview,
   };
 }
 
 export function companionOverlayBounds(
-  layouts: readonly Pick<CompanionLayout, "bounds">[],
+  _layouts: readonly Pick<CompanionLayout, "bounds" | "preview">[],
   workArea: Rectangle,
 ): Rectangle {
-  if (layouts.length === 0) {
-    return { x: workArea.x, y: workArea.y, width: 1, height: 1 };
-  }
-  const bounds = layouts.map((layout) => constrainCompanionBounds(layout.bounds, workArea));
-  const left = Math.min(...bounds.map((entry) => entry.x));
-  const top = Math.min(...bounds.map((entry) => entry.y));
-  const right = Math.max(...bounds.map((entry) => entry.x + entry.width));
-  const bottom = Math.max(...bounds.map((entry) => entry.y + entry.height));
-  return {
-    x: Math.round(left),
-    y: Math.round(top),
-    width: Math.max(1, Math.round(right - left)),
-    height: Math.max(1, Math.round(bottom - top)),
-  };
+  return { ...workArea };
+}
+
+function rectanglesEqual(left: Rectangle, right: Rectangle): boolean {
+  return (
+    left.x === right.x &&
+    left.y === right.y &&
+    left.width === right.width &&
+    left.height === right.height
+  );
 }
 
 export class DesktopCompanionManager extends Context.Service<
@@ -180,8 +224,10 @@ export const make = Effect.gen(function* () {
     CompanionId,
     { readonly displayId: string; readonly bounds: Rectangle }
   >();
+  const previewSessions = new Map<CompanionId, PreviewSessionState>();
   let desiredProjections = new Map<CompanionId, CompanionProjection>();
   let desktopScalePercent = DEFAULT_COMPANION_DESKTOP_SCALE_PERCENT;
+  let desktopPreviewsEnabled = true;
   let desiredDisplayIds = new Set<string>();
   let acceptedSnapshot: AcceptedSnapshot | null = null;
   let reconciliationFiber: Fiber.Fiber<void, never> | null = null;
@@ -210,6 +256,7 @@ export const make = Effect.gen(function* () {
       desktopCompanionPresentation({
         projection: layout.projection,
         bounds: layout.bounds,
+        preview: layout.preview,
         overlayBounds: entry.overlayBounds,
       }),
     ),
@@ -282,8 +329,52 @@ export const make = Effect.gen(function* () {
     );
   };
 
+  const previewThreadKey = (projection: CompanionProjection): string =>
+    `${projection.threadRef.environmentId}\u0000${projection.threadRef.threadId}`;
+
+  const previewSessionFor = (projection: CompanionProjection): PreviewSessionState => {
+    const threadKey = previewThreadKey(projection);
+    const existing = previewSessions.get(projection.companionId);
+    if (existing?.threadKey === threadKey) return existing;
+    const created: PreviewSessionState = { threadKey, expanded: false };
+    previewSessions.set(projection.companionId, created);
+    return created;
+  };
+
+  const applyPreviewGeometry = (input: {
+    readonly workArea: Rectangle;
+    readonly layouts: CompanionLayout[];
+  }): void => {
+    const spriteBounds = input.layouts.map((layout) => layout.bounds);
+    const occupied: Rectangle[] = [];
+    for (const layout of input.layouts) {
+      if (!desktopPreviewsEnabled || layout.projection.preview === null) {
+        layout.preview = null;
+        continue;
+      }
+      const session = previewSessionFor(layout.projection);
+      const geometry = chooseCompanionPreviewGeometry({
+        companionBounds: layout.bounds,
+        workArea: input.workArea,
+        obstacles: [...spriteBounds.filter((bounds) => bounds !== layout.bounds), ...occupied],
+        previousPlacement: session.placement,
+      });
+      session.placement = geometry.placement;
+      layout.preview = {
+        ...geometry,
+        expanded: session.expanded,
+      };
+      occupied.push(geometry.toggleBounds);
+      if (session.expanded) occupied.push(geometry.cardBounds);
+    }
+  };
+
   const buildOverlayGroups = Effect.fn("desktop.companions.buildOverlayGroups")(function* () {
     const groups = new Map<string, OverlayGroup>();
+    if (desiredProjections.size === 0) return groups;
+    for (const display of Electron.screen.getAllDisplays()) {
+      groups.set(String(display.id), { display, layouts: [] });
+    }
     const defaultIndexByDisplay = new Map<string, number>();
     const dimensions = companionDisplayDimensions(desktopScalePercent);
     for (const projection of desiredProjections.values()) {
@@ -318,8 +409,12 @@ export const make = Effect.gen(function* () {
       group.layouts.push({
         projection,
         bounds: constrainCompanionBounds(bounds, display.workArea),
+        preview: null,
       });
       groups.set(displayId, group);
+    }
+    for (const group of groups.values()) {
+      applyPreviewGeometry({ workArea: group.display.workArea, layouts: group.layouts });
     }
     return groups;
   });
@@ -364,6 +459,7 @@ export const make = Effect.gen(function* () {
       overlayBounds,
       layouts: group.layouts,
       drag: null,
+      press: null,
     };
     const webContentsId = window.webContents.id;
     overlays.set(displayId, entry);
@@ -439,9 +535,18 @@ export const make = Effect.gen(function* () {
       ) {
         entry.drag = null;
       }
+      if (
+        entry.press &&
+        !group.layouts.some((layout) => layout.projection.companionId === entry.press?.companionId)
+      ) {
+        entry.press = null;
+      }
       if (!entry.window.isDestroyed()) {
-        entry.overlayBounds = companionOverlayBounds(group.layouts, group.display.workArea);
-        entry.window.setBounds(entry.overlayBounds, false);
+        const nextOverlayBounds = companionOverlayBounds(group.layouts, group.display.workArea);
+        if (!rectanglesEqual(entry.overlayBounds, nextOverlayBounds)) {
+          entry.overlayBounds = nextOverlayBounds;
+          entry.window.setBounds(nextOverlayBounds, false);
+        }
         sendOverlayPresentation(entry);
       }
     }
@@ -488,11 +593,80 @@ export const make = Effect.gen(function* () {
     attachMainWindowGuards(mainWindow);
   });
 
+  const acknowledgeProjection = Effect.fn("desktop.companions.acknowledge")(function* (
+    projection: CompanionProjection,
+  ) {
+    const mainWindow = yield* currentMain;
+    if (mainWindow === null || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send(
+      IpcChannels.COMPANION_ACKNOWLEDGE_THREAD_CHANNEL,
+      projection.threadRef,
+    );
+  });
+
   const findDraggedLayout = (
-    entry: OverlayWindowEntry,
     companionId: CompanionId,
-  ): CompanionLayout | null =>
-    entry.layouts.find((layout) => layout.projection.companionId === companionId) ?? null;
+  ): { readonly entry: OverlayWindowEntry; readonly layout: CompanionLayout } | null => {
+    for (const entry of overlays.values()) {
+      const layout = entry.layouts.find(
+        (candidate) => candidate.projection.companionId === companionId,
+      );
+      if (layout) return { entry, layout };
+    }
+    return null;
+  };
+
+  const pointerTargetBounds = (
+    layout: CompanionLayout,
+    target: CompanionPointerEvent["target"],
+  ): Rectangle | null => {
+    if (target === "companion") return layout.bounds;
+    if (layout.preview === null) return null;
+    if (target === "toggle") return layout.preview.toggleBounds;
+    return layout.preview.expanded ? layout.preview.cardBounds : null;
+  };
+
+  const moveLayout = (layout: CompanionLayout, nextBounds: Rectangle): void => {
+    layout.bounds = nextBounds;
+  };
+
+  const reflowEntry = (entry: OverlayWindowEntry): void => {
+    applyPreviewGeometry({ workArea: entry.workArea, layouts: entry.layouts });
+    sendOverlayPresentation(entry);
+  };
+
+  const moveLayoutToDisplay = (
+    located: { readonly entry: OverlayWindowEntry; readonly layout: CompanionLayout },
+    display: Electron.Display,
+    nextBounds: Rectangle,
+  ): { readonly entry: OverlayWindowEntry; readonly layout: CompanionLayout } => {
+    const nextEntry = overlays.get(String(display.id)) ?? located.entry;
+    const constrained = constrainCompanionBounds(nextBounds, display.workArea);
+    moveLayout(located.layout, constrained);
+    if (nextEntry === located.entry) {
+      reflowEntry(located.entry);
+      return located;
+    }
+    located.entry.layouts = located.entry.layouts.filter(
+      (candidate) => candidate !== located.layout,
+    );
+    nextEntry.layouts = [...nextEntry.layouts, located.layout];
+    reflowEntry(located.entry);
+    reflowEntry(nextEntry);
+    return { entry: nextEntry, layout: located.layout };
+  };
+
+  const togglePreview = Effect.fn("desktop.companions.togglePreview")(function* (
+    projection: CompanionProjection,
+  ) {
+    const session = previewSessionFor(projection);
+    const nextExpanded = !session.expanded;
+    session.expanded = nextExpanded;
+    if (nextExpanded && projection.signal === "completed-unseen") {
+      yield* acknowledgeProjection(projection);
+    }
+    yield* reconcileOverlays;
+  });
 
   const handlePointer = Effect.fn("desktop.companions.pointer")(function* (
     senderWebContentsId: number,
@@ -502,17 +676,28 @@ export const make = Effect.gen(function* () {
     if (!entry || entry.window.isDestroyed()) return;
     if (pointerEvent.phase === "down") {
       const layout = entry.layouts[pointerEvent.presentationIndex];
+      const targetBounds = layout ? pointerTargetBounds(layout, pointerEvent.target) : null;
       if (
         !layout ||
-        pointerEvent.screenX < layout.bounds.x ||
-        pointerEvent.screenX >= layout.bounds.x + layout.bounds.width ||
-        pointerEvent.screenY < layout.bounds.y ||
-        pointerEvent.screenY >= layout.bounds.y + layout.bounds.height
+        targetBounds === null ||
+        !rectangleContainsPoint(targetBounds, {
+          x: pointerEvent.screenX,
+          y: pointerEvent.screenY,
+        })
       ) {
         yield* logWarning("rejected companion pointer target outside its presentation bounds", {
           senderWebContentsId,
           presentationIndex: pointerEvent.presentationIndex,
+          target: pointerEvent.target,
         });
+        return;
+      }
+      entry.press = {
+        companionId: layout.projection.companionId,
+        target: pointerEvent.target,
+      };
+      if (pointerEvent.target !== "companion") {
+        entry.drag = null;
         return;
       }
       entry.drag = {
@@ -527,10 +712,45 @@ export const make = Effect.gen(function* () {
       return;
     }
 
+    if (pointerEvent.phase === "cancel") {
+      entry.press = null;
+      const cancelledDrag = entry.drag;
+      if (cancelledDrag) inFlightPositions.delete(cancelledDrag.companionId);
+      entry.drag = null;
+      if (cancelledDrag?.dragging) yield* reconcileOverlays;
+      return;
+    }
+
+    const press = entry.press;
+    if (press && press.target !== "companion") {
+      if (pointerEvent.phase !== "up") return;
+      entry.press = null;
+      const located = findDraggedLayout(press.companionId);
+      const layout = located?.layout ?? null;
+      const targetBounds = layout ? pointerTargetBounds(layout, press.target) : null;
+      if (
+        !layout ||
+        pointerEvent.target !== press.target ||
+        targetBounds === null ||
+        !rectangleContainsPoint(targetBounds, {
+          x: pointerEvent.screenX,
+          y: pointerEvent.screenY,
+        })
+      ) {
+        return;
+      }
+      if (press.target === "toggle") {
+        yield* togglePreview(layout.projection);
+      } else {
+        yield* acknowledgeProjection(layout.projection);
+      }
+      return;
+    }
+
     const drag = entry.drag;
     if (!drag) return;
-    const layout = findDraggedLayout(entry, drag.companionId);
-    if (!layout) {
+    let located = findDraggedLayout(drag.companionId);
+    if (!located) {
       entry.drag = null;
       inFlightPositions.delete(drag.companionId);
       return;
@@ -540,22 +760,24 @@ export const make = Effect.gen(function* () {
     if (pointerEvent.phase === "move") {
       if (!drag.dragging && Math.hypot(deltaX, deltaY) >= DRAG_THRESHOLD) {
         drag.dragging = true;
-        entry.overlayBounds = entry.workArea;
-        entry.window.setBounds(entry.workArea, false);
       }
       const now = performance.now();
       if (!drag.dragging || now - drag.lastMoveAt < MIN_MOVE_INTERVAL_MS) return;
       drag.lastMoveAt = now;
-      layout.bounds = {
-        ...layout.bounds,
+      const nextBounds = {
+        ...located.layout.bounds,
         x: Math.round(drag.companionX + deltaX),
         y: Math.round(drag.companionY + deltaY),
       };
-      inFlightPositions.set(drag.companionId, {
-        displayId: entry.displayId,
-        bounds: layout.bounds,
+      const display = Electron.screen.getDisplayNearestPoint({
+        x: pointerEvent.screenX,
+        y: pointerEvent.screenY,
       });
-      sendOverlayPresentation(entry);
+      located = moveLayoutToDisplay(located, display, nextBounds);
+      inFlightPositions.set(drag.companionId, {
+        displayId: located.entry.displayId,
+        bounds: located.layout.bounds,
+      });
       return;
     }
 
@@ -563,17 +785,25 @@ export const make = Effect.gen(function* () {
       drag.dragging = true;
     }
     if (drag.dragging) {
-      layout.bounds = {
-        ...layout.bounds,
+      const nextBounds = {
+        ...located.layout.bounds,
         x: Math.round(drag.companionX + deltaX),
         y: Math.round(drag.companionY + deltaY),
       };
+      const display = Electron.screen.getDisplayNearestPoint({
+        x: pointerEvent.screenX,
+        y: pointerEvent.screenY,
+      });
+      located = moveLayoutToDisplay(located, display, nextBounds);
     }
     entry.drag = null;
+    entry.press = null;
     if (drag.dragging) {
-      const display = Electron.screen.getDisplayMatching(layout.bounds as Electron.Rectangle);
-      const constrained = constrainCompanionBounds(layout.bounds, display.workArea);
-      layout.bounds = constrained;
+      const display = Electron.screen.getDisplayMatching(
+        located.layout.bounds as Electron.Rectangle,
+      );
+      const constrained = constrainCompanionBounds(located.layout.bounds, display.workArea);
+      moveLayout(located.layout, constrained);
       yield* positions.set(
         drag.companionId,
         positionFromBounds({
@@ -587,7 +817,10 @@ export const make = Effect.gen(function* () {
       return;
     }
     inFlightPositions.delete(drag.companionId);
-    if (pointerEvent.phase === "up") yield* revealAndNavigate(layout.projection);
+    if (pointerEvent.phase === "up") {
+      yield* acknowledgeProjection(located.layout.projection);
+      yield* revealAndNavigate(located.layout.projection);
+    }
   });
 
   const syncProjection = Effect.fn("desktop.companions.syncProjection")(function* (
@@ -604,11 +837,17 @@ export const make = Effect.gen(function* () {
     if (accepted === null) return;
     acceptedSnapshot = accepted;
     desktopScalePercent = snapshot.desktopScalePercent;
+    desktopPreviewsEnabled = snapshot.desktopPreviewsEnabled;
     desiredProjections = new Map(
       snapshot.companions
         .filter((projection) => projection.showOnDesktop)
         .map((projection) => [projection.companionId, projection] as const),
     );
+    for (const companionId of previewSessions.keys()) {
+      if (!desiredProjections.has(companionId) || !desktopPreviewsEnabled) {
+        previewSessions.delete(companionId);
+      }
+    }
     for (const companionId of inFlightPositions.keys()) {
       if (!desiredProjections.has(companionId)) inFlightPositions.delete(companionId);
     }
@@ -627,6 +866,7 @@ export const make = Effect.gen(function* () {
     }
     yield* positions.reset;
     inFlightPositions.clear();
+    previewSessions.clear();
     yield* cancelScheduledReconciliation;
     yield* reconcileOverlays;
   });

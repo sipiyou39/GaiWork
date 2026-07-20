@@ -52,10 +52,14 @@ const projection = {
   displayId: "performance-display",
   companions: companionIds.map((companionId, index) => ({
     companionId,
+    signal: "idle",
     baseAnimation: "idle",
     accessibleLabel: companionId + ": Idle",
     x: (index % 5) * 200,
     y: Math.floor(index / 5) * 216,
+    width: 192,
+    height: 208,
+    preview: null,
   })),
 };
 contextBridge.exposeInMainWorld("companionBridge", {

@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { MessageId, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ScopedThreadRef } from "./environment.ts";
 
 export const COMPANION_IDS = [
@@ -78,6 +78,25 @@ export const CompanionAssignment = Schema.Struct({
 });
 export type CompanionAssignment = typeof CompanionAssignment.Type;
 
+export const COMPANION_PREVIEW_TITLE_MAX_LENGTH = 96;
+export const COMPANION_PREVIEW_USER_MAX_LENGTH = 180;
+export const COMPANION_PREVIEW_ASSISTANT_MAX_LENGTH = 360;
+
+const CompanionPreviewText = (maximum: number) =>
+  Schema.String.check(Schema.isTrimmed())
+    .check(Schema.isNonEmpty())
+    .check(Schema.isMaxLength(maximum));
+
+/** Compact, plain-text view of the most recent exchange known by GaiWork. */
+export const CompanionConversationPreview = Schema.Struct({
+  userMessageId: Schema.NullOr(MessageId),
+  userText: Schema.NullOr(CompanionPreviewText(COMPANION_PREVIEW_USER_MAX_LENGTH)),
+  assistantMessageId: Schema.NullOr(MessageId),
+  assistantText: Schema.NullOr(CompanionPreviewText(COMPANION_PREVIEW_ASSISTANT_MAX_LENGTH)),
+  assistantStreaming: Schema.Boolean,
+});
+export type CompanionConversationPreview = typeof CompanionConversationPreview.Type;
+
 export const CompanionProjection = Schema.Struct({
   companionId: CompanionId,
   threadRef: ScopedThreadRef,
@@ -86,18 +105,45 @@ export const CompanionProjection = Schema.Struct({
   baseAnimation: CompanionAnimationState,
   accessibleLabel: TrimmedNonEmptyString,
   showOnDesktop: Schema.Boolean,
+  preview: Schema.NullOr(CompanionConversationPreview),
 });
 export type CompanionProjection = typeof CompanionProjection.Type;
 
-/** Animation-only payload exposed to an isolated desktop companion renderer. */
+export const COMPANION_PREVIEW_PLACEMENTS = ["top", "bottom", "left", "right"] as const;
+export const CompanionPreviewPlacement = Schema.Literals(COMPANION_PREVIEW_PLACEMENTS);
+export type CompanionPreviewPlacement = typeof CompanionPreviewPlacement.Type;
+
+/** Geometry and content exposed to the isolated desktop companion renderer. */
+export const DesktopCompanionPreviewPresentation = Schema.Struct({
+  expanded: Schema.Boolean,
+  placement: CompanionPreviewPlacement,
+  title: CompanionPreviewText(COMPANION_PREVIEW_TITLE_MAX_LENGTH),
+  userMessageId: Schema.NullOr(MessageId),
+  userText: Schema.NullOr(CompanionPreviewText(COMPANION_PREVIEW_USER_MAX_LENGTH)),
+  assistantMessageId: Schema.NullOr(MessageId),
+  assistantText: Schema.NullOr(CompanionPreviewText(COMPANION_PREVIEW_ASSISTANT_MAX_LENGTH)),
+  assistantStreaming: Schema.Boolean,
+  cardX: NonNegativeInt,
+  cardY: NonNegativeInt,
+  cardWidth: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
+  cardHeight: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
+  toggleX: NonNegativeInt,
+  toggleY: NonNegativeInt,
+  toggleSize: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1_000 })),
+});
+export type DesktopCompanionPreviewPresentation = typeof DesktopCompanionPreviewPresentation.Type;
+
+/** Minimal presentation payload exposed to an isolated desktop companion renderer. */
 export const DesktopCompanionPresentation = Schema.Struct({
   companionId: CompanionId,
+  signal: CompanionSignal,
   baseAnimation: CompanionAnimationState,
   accessibleLabel: TrimmedNonEmptyString,
   x: NonNegativeInt,
   y: NonNegativeInt,
   width: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
   height: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
+  preview: Schema.NullOr(DesktopCompanionPreviewPresentation),
 });
 export type DesktopCompanionPresentation = typeof DesktopCompanionPresentation.Type;
 
@@ -115,6 +161,7 @@ export const CompanionProjectionSnapshot = Schema.Struct({
   desktopScalePercent: CompanionDesktopScalePercent.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPANION_DESKTOP_SCALE_PERCENT)),
   ),
+  desktopPreviewsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   companions: Schema.Array(CompanionProjection).check(Schema.isMaxLength(COMPANION_IDS.length)),
 });
 export type CompanionProjectionSnapshot = typeof CompanionProjectionSnapshot.Type;
@@ -128,6 +175,7 @@ export type MainWindowAttentionState = typeof MainWindowAttentionState.Type;
 
 export const CompanionPointerEvent = Schema.Struct({
   phase: Schema.Literals(["down", "move", "up", "cancel"]),
+  target: Schema.Literals(["companion", "preview", "toggle"]),
   presentationIndex: NonNegativeInt,
   screenX: Schema.Finite,
   screenY: Schema.Finite,

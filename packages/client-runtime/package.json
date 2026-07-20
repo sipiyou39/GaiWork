@@ -7,6 +7,18 @@
       "types": "./src/companions/index.ts",
       "default": "./src/companions/index.ts"
     },
+    "./companions/catalog": {
+      "types": "./src/companions/catalog.ts",
+      "default": "./src/companions/catalog.ts"
+    },
+    "./companions/interaction": {
+      "types": "./src/companions/interaction.ts",
+      "default": "./src/companions/interaction.ts"
+    },
+    "./companions/player": {
+      "types": "./src/companions/player.ts",
+      "default": "./src/companions/player.ts"
+    },
     "./connection": {
       "types": "./src/connection/index.ts",
       "default": "./src/connection/index.ts"

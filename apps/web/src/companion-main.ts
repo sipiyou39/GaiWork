@@ -2,19 +2,23 @@ import type {
   CompanionAnimationState,
   CompanionId,
   CompanionPointerEvent,
+  CompanionPreviewPlacement,
+  CompanionSignal,
   DesktopCompanionOverlayPresentation,
   DesktopCompanionPresentation,
 } from "@t3tools/contracts";
 import {
   COMPANION_ANIMATIONS,
   COMPANION_ATLAS,
+  getCompanionCatalogEntry,
+} from "@t3tools/client-runtime/companions/catalog";
+import { resolveCompanionInteractionAnimation } from "@t3tools/client-runtime/companions/interaction";
+import {
   COMPANION_JUMP_REPEAT_DELAY_MS,
   companionAnimationDuration,
   companionTimeUntilNextFrame,
-  getCompanionCatalogEntry,
-  resolveCompanionInteractionAnimation,
   resolveCompanionFrame,
-} from "@t3tools/client-runtime/companions";
+} from "@t3tools/client-runtime/companions/player";
 
 import "./companion.css";
 
@@ -22,6 +26,13 @@ interface SpriteState {
   presentation: DesktopCompanionPresentation;
   readonly element: HTMLCanvasElement;
   readonly context: CanvasRenderingContext2D;
+  readonly toggle: HTMLButtonElement;
+  readonly toggleChevron: SVGSVGElement;
+  readonly card: HTMLElement;
+  readonly title: HTMLElement;
+  readonly status: HTMLElement;
+  readonly userText: HTMLElement;
+  readonly assistantText: HTMLElement;
   image: HTMLImageElement | null;
   spriteReady: boolean;
   alphaMask: Uint8ClampedArray | null;
@@ -29,6 +40,15 @@ interface SpriteState {
   animationStartedAt: number;
   activeAnimation: CompanionAnimationState | null;
   lastRenderedFrame: number;
+  lastAssistantMessageId: string | null;
+  contentPulseTimer: number | null;
+  layoutAnimations: Animation[];
+}
+
+interface PointerHit {
+  readonly companionId: CompanionId;
+  readonly presentationIndex: number;
+  readonly target: CompanionPointerEvent["target"];
 }
 
 const exposedBridge = window.companionBridge;
@@ -45,6 +65,7 @@ let presentation: DesktopCompanionOverlayPresentation | null = null;
 let presentationOrder: CompanionId[] = [];
 let hoveredId: CompanionId | null = null;
 let pressedId: CompanionId | null = null;
+let pressedTarget: CompanionPointerEvent["target"] = "companion";
 let pressedPresentationIndex = 0;
 let pressedPointerId: number | null = null;
 let dragging = false;
@@ -62,6 +83,67 @@ let pendingPointerMove: CompanionPointerEvent | null = null;
 let lastPointerMoveSentAt = Number.NEGATIVE_INFINITY;
 
 const POINTER_MOVE_INTERVAL_MS = 1_000 / 60;
+
+function appendElement<K extends keyof HTMLElementTagNameMap>(
+  parent: HTMLElement,
+  tagName: K,
+  className: string,
+): HTMLElementTagNameMap[K] {
+  const element = document.createElement(tagName);
+  element.className = className;
+  parent.append(element);
+  return element;
+}
+
+function makeChevron(): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.classList.add("preview-toggle-chevron");
+  svg.setAttribute("viewBox", "0 0 20 20");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "m5.25 7.75 4.75 4.5 4.75-4.5");
+  svg.append(path);
+  return svg;
+}
+
+function makePreviewUi(companionId: CompanionId) {
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "preview-toggle";
+  toggle.tabIndex = -1;
+  toggle.hidden = true;
+  toggle.dataset.companionId = companionId;
+  toggle.append(appendElement(toggle, "span", "preview-toggle-spinner"));
+  const toggleChevron = makeChevron();
+  toggle.append(toggleChevron);
+  overlay.append(toggle);
+
+  const card = document.createElement("article");
+  card.className = "conversation-preview";
+  card.hidden = true;
+  card.setAttribute("aria-hidden", "true");
+  card.dataset.companionId = companionId;
+
+  const header = appendElement(card, "header", "conversation-preview-header");
+  const title = appendElement(header, "h2", "conversation-preview-title");
+  const statusPill = appendElement(header, "div", "conversation-preview-status-pill");
+  appendElement(statusPill, "span", "conversation-preview-status-dot");
+  const status = appendElement(statusPill, "span", "conversation-preview-status");
+
+  const exchange = appendElement(card, "div", "conversation-preview-exchange");
+  const userRow = appendElement(exchange, "div", "conversation-preview-row is-user");
+  const userLabel = appendElement(userRow, "span", "conversation-preview-speaker");
+  userLabel.textContent = "YOU";
+  const userText = appendElement(userRow, "p", "conversation-preview-message");
+
+  const assistantRow = appendElement(exchange, "div", "conversation-preview-row is-assistant");
+  const assistantLabel = appendElement(assistantRow, "span", "conversation-preview-speaker");
+  assistantLabel.textContent = "GAI";
+  const assistantText = appendElement(assistantRow, "p", "conversation-preview-message");
+
+  overlay.append(card);
+  return { toggle, toggleChevron, card, title, status, userText, assistantText };
+}
 
 function scheduleRender(delayMs = 0): void {
   if (renderTimer !== null) window.clearTimeout(renderTimer);
@@ -91,11 +173,13 @@ function makeSprite(nextPresentation: DesktopCompanionPresentation): SpriteState
   const context = element.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("Unable to create a companion alpha-mask canvas.");
 
+  const previewUi = makePreviewUi(nextPresentation.companionId);
   const now = performance.now();
   const sprite: SpriteState = {
     presentation: nextPresentation,
     element,
     context,
+    ...previewUi,
     image: null,
     spriteReady: false,
     alphaMask: null,
@@ -103,6 +187,9 @@ function makeSprite(nextPresentation: DesktopCompanionPresentation): SpriteState
     animationStartedAt: now,
     activeAnimation: null,
     lastRenderedFrame: -1,
+    lastAssistantMessageId: null,
+    contentPulseTimer: null,
+    layoutAnimations: [],
   };
   const image = new Image();
   sprite.image = image;
@@ -117,15 +204,184 @@ function makeSprite(nextPresentation: DesktopCompanionPresentation): SpriteState
   return sprite;
 }
 
+function signalLabel(signal: CompanionSignal): string {
+  switch (signal) {
+    case "working":
+      return "Working";
+    case "completed-unseen":
+      return "Completed";
+    case "awaiting-approval":
+      return "Approval needed";
+    case "awaiting-user-input":
+      return "Waiting for you";
+    case "plan-ready":
+      return "Plan ready";
+    case "failed":
+      return "Needs attention";
+    case "connecting":
+      return "Connecting";
+    case "offline":
+      return "Offline";
+    default:
+      return "Ready";
+  }
+}
+
+function emptyAssistantText(signal: CompanionSignal): string {
+  switch (signal) {
+    case "working":
+      return "The agent is working…";
+    case "completed-unseen":
+      return "The work is complete.";
+    case "awaiting-approval":
+      return "Your approval is required.";
+    case "awaiting-user-input":
+      return "The agent is waiting for your response.";
+    case "failed":
+      return "The agent needs your attention.";
+    default:
+      return "No agent response yet.";
+  }
+}
+
+function chevronRotation(placement: CompanionPreviewPlacement, expanded: boolean): number {
+  if (placement === "top") return expanded ? 0 : 180;
+  if (placement === "bottom") return expanded ? 180 : 0;
+  if (placement === "left") return expanded ? -90 : 90;
+  return expanded ? 90 : -90;
+}
+
+function pulsePreviewContent(sprite: SpriteState): void {
+  if (reducedMotion.matches) return;
+  if (sprite.contentPulseTimer !== null) window.clearTimeout(sprite.contentPulseTimer);
+  sprite.card.classList.remove("has-new-content");
+  void sprite.card.offsetWidth;
+  sprite.card.classList.add("has-new-content");
+  sprite.contentPulseTimer = window.setTimeout(() => {
+    sprite.contentPulseTimer = null;
+    sprite.card.classList.remove("has-new-content");
+  }, 500);
+}
+
+function animatePreviewReposition(
+  sprite: SpriteState,
+  element: HTMLElement,
+  deltaX: number,
+  deltaY: number,
+): void {
+  if (reducedMotion.matches || (deltaX === 0 && deltaY === 0)) return;
+  const animation = element.animate(
+    [{ translate: `${deltaX}px ${deltaY}px` }, { translate: "0 0" }],
+    {
+      duration: 180,
+      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+    },
+  );
+  sprite.layoutAnimations.push(animation);
+  const remove = () => {
+    sprite.layoutAnimations = sprite.layoutAnimations.filter(
+      (candidate) => candidate !== animation,
+    );
+  };
+  animation.addEventListener("finish", remove, { once: true });
+  animation.addEventListener("cancel", remove, { once: true });
+}
+
+function updatePreviewUi(
+  sprite: SpriteState,
+  companion: DesktopCompanionPresentation,
+  previousPreview: DesktopCompanionPresentation["preview"],
+): void {
+  const preview = companion.preview;
+  if (preview === null) {
+    sprite.toggle.hidden = true;
+    sprite.card.hidden = true;
+    return;
+  }
+
+  sprite.toggle.hidden = false;
+  sprite.card.hidden = false;
+  sprite.toggle.style.left = `${preview.toggleX}px`;
+  sprite.toggle.style.top = `${preview.toggleY}px`;
+  sprite.toggle.style.width = `${preview.toggleSize}px`;
+  sprite.toggle.style.height = `${preview.toggleSize}px`;
+  sprite.toggle.style.setProperty(
+    "--preview-chevron-rotation",
+    `${chevronRotation(preview.placement, preview.expanded)}deg`,
+  );
+  sprite.toggle.className = `preview-toggle placement-${preview.placement} signal-${companion.signal}${
+    preview.expanded ? " is-expanded" : ""
+  }`;
+  sprite.toggle.setAttribute(
+    "aria-label",
+    `${preview.expanded ? "Hide" : "Show"} conversation preview for ${preview.title}`,
+  );
+
+  sprite.card.style.left = `${preview.cardX}px`;
+  sprite.card.style.top = `${preview.cardY}px`;
+  sprite.card.style.width = `${preview.cardWidth}px`;
+  sprite.card.style.height = `${preview.cardHeight}px`;
+  sprite.card.className = `conversation-preview placement-${preview.placement} signal-${
+    companion.signal
+  }${preview.expanded ? " is-expanded" : ""}${preview.assistantStreaming ? " is-streaming" : ""}`;
+  sprite.card.setAttribute("aria-hidden", preview.expanded ? "false" : "true");
+  sprite.card.setAttribute(
+    "aria-label",
+    `${preview.title}. Latest prompt: ${preview.userText ?? "No text prompt"}. Latest response: ${
+      preview.assistantText ?? emptyAssistantText(companion.signal)
+    }`,
+  );
+
+  sprite.title.textContent = preview.title;
+  sprite.status.textContent = signalLabel(companion.signal);
+  sprite.userText.textContent = preview.userText ?? "Prompt with no text preview";
+  sprite.assistantText.textContent = preview.assistantText ?? emptyAssistantText(companion.signal);
+
+  if (previousPreview && previousPreview.placement !== preview.placement) {
+    for (const animation of sprite.layoutAnimations) animation.cancel();
+    sprite.layoutAnimations = [];
+    animatePreviewReposition(
+      sprite,
+      sprite.toggle,
+      previousPreview.toggleX - preview.toggleX,
+      previousPreview.toggleY - preview.toggleY,
+    );
+    animatePreviewReposition(
+      sprite,
+      sprite.card,
+      previousPreview.cardX - preview.cardX,
+      previousPreview.cardY - preview.cardY,
+    );
+  }
+
+  const nextAssistantMessageId = preview.assistantMessageId;
+  if (
+    sprite.lastAssistantMessageId !== null &&
+    nextAssistantMessageId !== null &&
+    sprite.lastAssistantMessageId !== nextAssistantMessageId
+  ) {
+    pulsePreviewContent(sprite);
+  }
+  sprite.lastAssistantMessageId = nextAssistantMessageId;
+}
+
+function removeSprite(companionId: CompanionId, sprite: SpriteState): void {
+  sprite.element.remove();
+  sprite.toggle.remove();
+  sprite.card.remove();
+  if (sprite.contentPulseTimer !== null) window.clearTimeout(sprite.contentPulseTimer);
+  for (const animation of sprite.layoutAnimations) animation.cancel();
+  sprites.delete(companionId);
+}
+
 function updatePresentation(nextPresentation: DesktopCompanionOverlayPresentation): void {
   presentation = nextPresentation;
   presentationOrder = nextPresentation.companions.map((companion) => companion.companionId);
   const nextIds = new Set(presentationOrder);
   for (const [companionId, sprite] of sprites) {
     if (nextIds.has(companionId)) continue;
-    sprite.element.remove();
-    sprites.delete(companionId);
-    if (pressedId === companionId) {
+    removeSprite(companionId, sprite);
+    if (pressedId === companionId && !dragging) {
       if (pressedPointerId !== null && overlay.hasPointerCapture(pressedPointerId)) {
         overlay.releasePointerCapture(pressedPointerId);
       }
@@ -139,6 +395,7 @@ function updatePresentation(nextPresentation: DesktopCompanionOverlayPresentatio
   for (const companion of nextPresentation.companions) {
     const sprite = sprites.get(companion.companionId) ?? makeSprite(companion);
     if (!sprites.has(companion.companionId)) sprites.set(companion.companionId, sprite);
+    const previousPreview = sprite.presentation.preview;
     if (sprite.presentation.baseAnimation !== companion.baseAnimation) {
       sprite.activeAnimation = null;
       sprite.animationStartedAt = performance.now();
@@ -149,6 +406,7 @@ function updatePresentation(nextPresentation: DesktopCompanionOverlayPresentatio
     sprite.element.style.width = `${companion.width}px`;
     sprite.element.style.height = `${companion.height}px`;
     sprite.element.setAttribute("aria-label", companion.accessibleLabel);
+    updatePreviewUi(sprite, companion, previousPreview);
   }
   scheduleRender();
 }
@@ -157,7 +415,9 @@ function resolveAnimation(sprite: SpriteState, now: number): CompanionAnimationS
   const isPressed = pressedId === sprite.presentation.companionId;
   return resolveCompanionInteractionAnimation({
     baseAnimation: sprite.presentation.baseAnimation,
-    ...(isPressed && dragging ? { dragAnimation: dragDirection } : {}),
+    ...(isPressed && pressedTarget === "companion" && dragging
+      ? { dragAnimation: dragDirection }
+      : {}),
     hovered: hoveredId === sprite.presentation.companionId,
     appearing: now - sprite.mountedAt < companionAnimationDuration("waving"),
   });
@@ -233,25 +493,55 @@ function render(now: number): void {
     bridge.notifyReady();
   }
   if (pressedId === null && lastPointerClientX !== null && lastPointerClientY !== null) {
-    // The sprite can move away from a stationary pointer between frames. Keep
-    // the hover animation latched until the next pointer movement, but make
-    // the current transparent pixel click-through immediately.
     setMouseEventsEnabled(hitTest(lastPointerClientX, lastPointerClientY) !== null);
   }
   if (Number.isFinite(nextRenderInMs)) scheduleRender(nextRenderInMs);
 }
 
-function hitTest(
+function pointInside(
   clientX: number,
   clientY: number,
-): {
-  readonly companionId: CompanionId;
-  readonly presentationIndex: number;
-} | null {
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): boolean {
+  return clientX >= x && clientX < x + width && clientY >= y && clientY < y + height;
+}
+
+function hitTest(clientX: number, clientY: number): PointerHit | null {
   if (!presentation) return null;
   for (let index = presentation.companions.length - 1; index >= 0; index -= 1) {
     const companion = presentation.companions[index];
     if (!companion) continue;
+    const preview = companion.preview;
+    if (
+      preview &&
+      pointInside(
+        clientX,
+        clientY,
+        preview.toggleX,
+        preview.toggleY,
+        preview.toggleSize,
+        preview.toggleSize,
+      )
+    ) {
+      return { companionId: companion.companionId, presentationIndex: index, target: "toggle" };
+    }
+    if (
+      preview?.expanded &&
+      pointInside(
+        clientX,
+        clientY,
+        preview.cardX,
+        preview.cardY,
+        preview.cardWidth,
+        preview.cardHeight,
+      )
+    ) {
+      return { companionId: companion.companionId, presentationIndex: index, target: "preview" };
+    }
+
     const sprite = sprites.get(companion.companionId);
     if (!sprite?.alphaMask) continue;
     const displayX = clientX - companion.x;
@@ -273,7 +563,11 @@ function hitTest(
       Math.floor((displayY * COMPANION_ATLAS.cellHeight) / companion.height),
     );
     if ((sprite.alphaMask[(y * COMPANION_ATLAS.cellWidth + x) * 4 + 3] ?? 0) >= 24) {
-      return { companionId: companion.companionId, presentationIndex: index };
+      return {
+        companionId: companion.companionId,
+        presentationIndex: index,
+        target: "companion",
+      };
     }
   }
   return null;
@@ -284,7 +578,7 @@ function syncHoverAtPointer(clientX: number, clientY: number): boolean {
   lastPointerClientY = clientY;
   if (pressedId) return false;
   const hit = hitTest(clientX, clientY);
-  const nextHoveredId = hit?.companionId ?? null;
+  const nextHoveredId = hit?.target === "companion" ? hit.companionId : null;
   const changed = hoveredId !== nextHoveredId;
   hoveredId = nextHoveredId;
   setMouseEventsEnabled(hit !== null);
@@ -297,6 +591,7 @@ function pointerEventPayload(
 ): CompanionPointerEvent {
   return {
     phase,
+    target: pressedTarget,
     presentationIndex: pressedPresentationIndex,
     screenX: event.screenX,
     screenY: event.screenY,
@@ -327,9 +622,6 @@ function sendTerminalPointerEvent(
   phase: Extract<CompanionPointerEvent["phase"], "up" | "cancel">,
   event: PointerEvent,
 ): void {
-  // The terminal event carries the latest coordinates, so dropping a queued
-  // intermediate move preserves the exact final position while keeping move
-  // IPC at or below 60 Hz.
   cancelPendingPointerMove();
   void bridge.sendPointerEvent(pointerEventPayload(phase, event));
 }
@@ -343,6 +635,7 @@ document.addEventListener("pointermove", (event) => {
     if (hoverChanged) scheduleRender();
     return;
   }
+  if (pressedTarget !== "companion") return;
   if (
     !dragging &&
     Math.hypot(event.screenX - pointerDownScreenX, event.screenY - pointerDownScreenY) >= 6
@@ -354,9 +647,7 @@ document.addEventListener("pointermove", (event) => {
     lastPointerScreenX = event.screenX;
   }
   schedulePointerMove(event);
-  if (dragging !== wasDragging || dragDirection !== previousDragDirection) {
-    scheduleRender();
-  }
+  if (dragging !== wasDragging || dragDirection !== previousDragDirection) scheduleRender();
 });
 
 document.addEventListener("pointerdown", (event) => {
@@ -364,6 +655,7 @@ document.addEventListener("pointerdown", (event) => {
   if (!hit) return;
   event.preventDefault();
   pressedId = hit.companionId;
+  pressedTarget = hit.target;
   pressedPresentationIndex = hit.presentationIndex;
   pressedPointerId = event.pointerId;
   dragging = false;

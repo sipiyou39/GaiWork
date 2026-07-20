@@ -52,6 +52,9 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   companionDesktopEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  companionDesktopPreviewsEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   companionDesktopScalePercent: CompanionDesktopScalePercent.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPANION_DESKTOP_SCALE_PERCENT)),
   ),
@@ -557,6 +560,7 @@ export const ClientSettingsPatch = Schema.Struct({
   autoOpenPlanSidebar: Schema.optionalKey(Schema.Boolean),
   companionAssignments: Schema.optionalKey(Schema.Array(CompanionAssignment)),
   companionDesktopEnabled: Schema.optionalKey(Schema.Boolean),
+  companionDesktopPreviewsEnabled: Schema.optionalKey(Schema.Boolean),
   companionDesktopScalePercent: Schema.optionalKey(CompanionDesktopScalePercent),
   companionShowOnDesktopByDefault: Schema.optionalKey(Schema.Boolean),
   companionSidebarScalePercent: Schema.optionalKey(CompanionSidebarScalePercent),

@@ -153,6 +153,21 @@ export function CompanionSettingsPanel() {
         />
 
         <SettingsRow
+          title="Conversation previews"
+          description="Show an optional macOS-style preview of the latest prompt and agent response beside each desktop companion. Previews always start collapsed."
+          control={
+            <Switch
+              checked={settings.companionDesktopPreviewsEnabled}
+              disabled={!desktopSupported || !settings.companionDesktopEnabled}
+              aria-label="Enable desktop companion conversation previews"
+              onCheckedChange={(checked) =>
+                updateSettings({ companionDesktopPreviewsEnabled: Boolean(checked) })
+              }
+            />
+          }
+        />
+
+        <SettingsRow
           title="Show new companions by default"
           description="Preselect “Show on desktop” the first time a companion is assigned to a conversation."
           control={

@@ -19,6 +19,7 @@ describe("desktop companion reconnect projection", () => {
       baseAnimation: "working",
       accessibleLabel: "Build the dashboard: Working",
       showOnDesktop: true,
+      preview: null,
     };
 
     expect(
@@ -34,6 +35,7 @@ describe("desktop companion reconnect projection", () => {
       baseAnimation: "thinking",
       accessibleLabel: "Build the dashboard: Reconnecting",
       showOnDesktop: true,
+      preview: null,
     });
   });
 
