@@ -47,7 +47,15 @@ import {
   registerDesktopCompanionPortal,
   resetDesktopCompanionPortalRegistry,
 } from "./DesktopCompanionPortalRegistry.ts";
-import { focusDesktopCompanionPortalWindow } from "./DesktopCompanionNativeFocus.ts";
+import {
+  captureDesktopCompanionNativeFocusOrigin,
+  focusDesktopCompanionPortalWindow,
+  prepareDesktopCompanionPortalFocus,
+  restoreDesktopCompanionDevTools,
+  restoreDesktopCompanionPortalFocus,
+  suspendDesktopCompanionDevTools,
+  type DesktopCompanionNativeFocusOrigin,
+} from "./DesktopCompanionNativeFocus.ts";
 import {
   COMPANION_COMPOSER_BUTTON_INSET,
   COMPANION_COMPOSER_BUTTON_SIZE,
@@ -125,6 +133,8 @@ interface CompanionPortalSession {
   readonly companionId: CompanionId;
   readonly surface: DesktopCompanionPortalSurface;
   readonly mainWindow: Electron.BrowserWindow;
+  readonly focusOrigin: DesktopCompanionNativeFocusOrigin;
+  restoreExternalApplication: boolean;
   window: Electron.BrowserWindow | null;
   displayId: string;
   ready: boolean;
@@ -296,11 +306,32 @@ export const make = Effect.gen(function* () {
   let acceptedSnapshot: AcceptedSnapshot | null = null;
   let reconciliationFiber: Fiber.Fiber<void, never> | null = null;
   let activePortal: CompanionPortalSession | null = null;
+  let pendingNativeFocusRestore: Fiber.Fiber<void, never> | null = null;
+  let nativeFocusRestoreRevision = 0;
+  let mainDevToolsRestorePending = false;
   let emitActivePortalLayout = (): void => undefined;
   let closeActivePortal = (): void => undefined;
   let quitting = false;
 
+  const cancelPendingNativeFocusRestore = (): void => {
+    const pending = pendingNativeFocusRestore;
+    if (pending === null) return;
+    nativeFocusRestoreRevision += 1;
+    pendingNativeFocusRestore = null;
+    runFork(Fiber.interrupt(pending));
+  };
+
   const currentMain = electronWindow.main.pipe(Effect.map(Option.getOrNull));
+
+  const restoreMainDevToolsAfterExplicitFocus = (window: Electron.BrowserWindow): void => {
+    if (!environment.isDevelopment || window.isDestroyed()) return;
+    const restored = restoreDesktopCompanionDevTools({
+      devTools: window.webContents,
+      mainWindowFocused: window.isFocused(),
+      restorePending: mainDevToolsRestorePending,
+    });
+    if (restored) mainDevToolsRestorePending = false;
+  };
 
   const isCurrentMainSender = (senderWebContentsId: number) =>
     currentMain.pipe(
@@ -379,9 +410,31 @@ export const make = Effect.gen(function* () {
         emitAttentionState(window);
       }
     });
-    window.on("show", () => emitAttentionState(window));
+    const keepMainWindowPassiveForPortal = (): void => {
+      const portal = activePortal;
+      if (portal === null || portal.mainWindow !== window || !portal.restoreExternalApplication) {
+        return;
+      }
+      prepareDesktopCompanionPortalFocus({
+        mainWindow: window,
+        origin: {
+          ...portal.focusOrigin,
+          restoreExternalApplication: portal.restoreExternalApplication,
+        },
+      });
+    };
+    window.on("show", () => {
+      keepMainWindowPassiveForPortal();
+      emitAttentionState(window);
+    });
     window.on("hide", () => emitAttentionState(window));
-    window.on("focus", () => emitAttentionState(window));
+    window.on("focus", () => {
+      keepMainWindowPassiveForPortal();
+      if (!activePortal?.restoreExternalApplication) {
+        restoreMainDevToolsAfterExplicitFocus(window);
+      }
+      emitAttentionState(window);
+    });
     window.on("blur", () => emitAttentionState(window));
     window.on("minimize", () => emitAttentionState(window));
     window.on("restore", () => emitAttentionState(window));
@@ -664,6 +717,8 @@ export const make = Effect.gen(function* () {
   const revealAndNavigate = Effect.fn("desktop.companions.navigate")(function* (
     projection: CompanionProjection,
   ) {
+    if (activePortal) activePortal.restoreExternalApplication = false;
+    cancelPendingNativeFocusRestore();
     const mainWindow = yield* desktopWindow.navigateToThread(projection.threadRef);
     attachMainWindowGuards(mainWindow);
   });
@@ -815,7 +870,35 @@ export const make = Effect.gen(function* () {
     portal.mainWindow.webContents.send(IpcChannels.COMPANION_PORTAL_LAYOUT_CHANNEL, layout);
   };
 
-  const closePortalNow = (token: string): void => {
+  const restorePortalNativeFocus = (portal: CompanionPortalSession): void => {
+    if (!portal.restoreExternalApplication) return;
+    cancelPendingNativeFocusRestore();
+    restoreDesktopCompanionPortalFocus({
+      application: Electron.app,
+      origin: {
+        ...portal.focusOrigin,
+        restoreExternalApplication: portal.restoreExternalApplication,
+      },
+      overlays: [...overlays.values()].map((entry) => entry.window),
+      platform: environment.platform,
+      schedule: (restore) => {
+        const revision = ++nativeFocusRestoreRevision;
+        pendingNativeFocusRestore = runFork(
+          Effect.sleep(1).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                if (revision !== nativeFocusRestoreRevision) return;
+                pendingNativeFocusRestore = null;
+                if (!quitting) restore();
+              }),
+            ),
+          ),
+        );
+      },
+    });
+  };
+
+  const closePortalNow = (token: string, restoreApplicationFocus = true): void => {
     const portal = activePortal;
     if (!portal || portal.token !== token) return;
     activePortal = null;
@@ -826,6 +909,9 @@ export const make = Effect.gen(function* () {
       session.expanded = false;
       session.cardSize = undefined;
     }
+    // Deactivate GaiWork before destroying its focused portal. Otherwise AppKit
+    // promotes the main window (or detached DevTools) as the next key window.
+    if (restoreApplicationFocus) restorePortalNativeFocus(portal);
     if (portal.window && !portal.window.isDestroyed()) portal.window.destroy();
     void runPromise(reconcileOverlays).catch((cause) => {
       void runPromise(
@@ -880,8 +966,11 @@ export const make = Effect.gen(function* () {
       ) {
         return;
       }
-      Electron.app.focus({ steal: true });
-      window.webContents.focus();
+      focusDesktopCompanionPortalWindow({
+        application: Electron.app,
+        window,
+        platform: environment.platform,
+      });
     });
     window.webContents.on(
       "did-fail-load",
@@ -915,12 +1004,42 @@ export const make = Effect.gen(function* () {
     const located = findDraggedLayout(projection.companionId);
     const mainWindow = yield* currentMain;
     if (!located?.layout.preview || mainWindow === null || mainWindow.isDestroyed()) return;
+    let transferredFocus:
+      | {
+          readonly origin: DesktopCompanionNativeFocusOrigin;
+          readonly restoreExternalApplication: boolean;
+        }
+      | undefined;
     if (activePortal) {
       if (activePortal.companionId === projection.companionId && activePortal.surface === surface) {
         return;
       }
+      transferredFocus = {
+        origin: activePortal.focusOrigin,
+        restoreExternalApplication: activePortal.restoreExternalApplication,
+      };
       requestPortalClose(activePortal);
-      closePortalNow(activePortal.token);
+      closePortalNow(activePortal.token, false);
+    }
+    cancelPendingNativeFocusRestore();
+
+    const focusOrigin =
+      transferredFocus?.origin ??
+      captureDesktopCompanionNativeFocusOrigin({
+        application: {
+          isFocused: () => Electron.BrowserWindow.getFocusedWindow() !== null,
+        },
+        platform: environment.platform,
+      });
+    const restoreExternalApplication =
+      transferredFocus?.restoreExternalApplication ?? focusOrigin.restoreExternalApplication;
+    if (transferredFocus === undefined && restoreExternalApplication) {
+      prepareDesktopCompanionPortalFocus({ mainWindow, origin: focusOrigin });
+      mainDevToolsRestorePending =
+        suspendDesktopCompanionDevTools({
+          devTools: mainWindow.webContents,
+          shouldSuspend: environment.isDevelopment,
+        }) || mainDevToolsRestorePending;
     }
 
     const session = previewSessionFor(projection);
@@ -935,6 +1054,8 @@ export const make = Effect.gen(function* () {
       companionId: projection.companionId,
       surface,
       mainWindow,
+      focusOrigin,
+      restoreExternalApplication,
       window: null,
       displayId: located.entry.displayId,
       ready: false,
@@ -1217,6 +1338,13 @@ export const make = Effect.gen(function* () {
 
   const destroyAllNow = () => {
     quitting = true;
+    nativeFocusRestoreRevision += 1;
+    const focusRestore = pendingNativeFocusRestore;
+    pendingNativeFocusRestore = null;
+    mainDevToolsRestorePending = false;
+    if (focusRestore !== null) {
+      runFork(Fiber.interrupt(focusRestore));
+    }
     const portal = activePortal;
     activePortal = null;
     if (portal) {
