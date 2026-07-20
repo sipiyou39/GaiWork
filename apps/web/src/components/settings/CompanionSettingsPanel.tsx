@@ -17,6 +17,7 @@ import { isElectron } from "~/env";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { isMacPlatform } from "~/lib/utils";
 import { Button } from "../ui/button";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import {
@@ -154,7 +155,7 @@ export function CompanionSettingsPanel() {
 
         <SettingsRow
           title="Conversation previews"
-          description="Show an optional macOS-style preview of the latest prompt and agent response beside each desktop companion. Previews always start collapsed."
+          description="Show a macOS-style preview of the latest agent response beside each desktop companion. Previews always start collapsed."
           control={
             <Switch
               checked={settings.companionDesktopPreviewsEnabled}
@@ -164,6 +165,45 @@ export function CompanionSettingsPanel() {
                 updateSettings({ companionDesktopPreviewsEnabled: Boolean(checked) })
               }
             />
+          }
+        />
+
+        <SettingsRow
+          title="Expanded view"
+          description="Choose what the chevron reveals beside a desktop companion."
+          control={
+            <Select
+              value={settings.companionDesktopExpandedView}
+              onValueChange={(value) => {
+                if (value === "response-only" || value === "response-and-composer") {
+                  updateSettings({ companionDesktopExpandedView: value });
+                }
+              }}
+            >
+              <SelectTrigger
+                className="w-full sm:w-48"
+                aria-label="Desktop companion expanded view"
+                disabled={
+                  !desktopSupported ||
+                  !settings.companionDesktopEnabled ||
+                  !settings.companionDesktopPreviewsEnabled
+                }
+              >
+                <SelectValue>
+                  {settings.companionDesktopExpandedView === "response-and-composer"
+                    ? "Response + composer"
+                    : "Response only"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="response-and-composer">
+                  Response + composer
+                </SelectItem>
+                <SelectItem hideIndicator value="response-only">
+                  Response only
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 

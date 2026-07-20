@@ -3,7 +3,6 @@ import type {
   CompanionId,
   CompanionPointerEvent,
   CompanionPreviewPlacement,
-  CompanionSignal,
   DesktopCompanionOverlayPresentation,
   DesktopCompanionPresentation,
 } from "@t3tools/contracts";
@@ -19,6 +18,10 @@ import {
   companionTimeUntilNextFrame,
   resolveCompanionFrame,
 } from "@t3tools/client-runtime/companions/player";
+import {
+  companionSignalLabel,
+  emptyCompanionAssistantText,
+} from "./components/companions/companionPreviewPresentation";
 
 import "./companion.css";
 
@@ -215,46 +218,6 @@ function makeSprite(nextPresentation: DesktopCompanionPresentation): SpriteState
   return sprite;
 }
 
-function signalLabel(signal: CompanionSignal): string {
-  switch (signal) {
-    case "working":
-      return "Working";
-    case "completed-unseen":
-      return "Completed";
-    case "awaiting-approval":
-      return "Approval needed";
-    case "awaiting-user-input":
-      return "Waiting for you";
-    case "plan-ready":
-      return "Plan ready";
-    case "failed":
-      return "Needs attention";
-    case "connecting":
-      return "Connecting";
-    case "offline":
-      return "Offline";
-    default:
-      return "Ready";
-  }
-}
-
-function emptyAssistantText(signal: CompanionSignal): string {
-  switch (signal) {
-    case "working":
-      return "The agent is working…";
-    case "completed-unseen":
-      return "The work is complete.";
-    case "awaiting-approval":
-      return "Your approval is required.";
-    case "awaiting-user-input":
-      return "The agent is waiting for your response.";
-    case "failed":
-      return "The agent needs your attention.";
-    default:
-      return "No agent response yet.";
-  }
-}
-
 function chevronRotation(placement: CompanionPreviewPlacement, expanded: boolean): number {
   if (placement === "top") return expanded ? 0 : 180;
   if (placement === "bottom") return expanded ? 180 : 0;
@@ -328,7 +291,9 @@ function updatePreviewUi(
   }`;
   sprite.toggle.setAttribute(
     "aria-label",
-    `${surfaceVisible ? "Hide" : "Show"} latest agent response`,
+    `${surfaceVisible ? "Hide" : "Show"} ${
+      preview.showComposerButton ? "latest agent response" : "agent response and composer"
+    }`,
   );
 
   sprite.card.style.left = `${preview.cardX}px`;
@@ -343,21 +308,25 @@ function updatePreviewUi(
   sprite.card.setAttribute("aria-hidden", surfaceVisible ? "false" : "true");
   sprite.card.setAttribute(
     "aria-label",
-    `Latest response: ${preview.assistantText ?? emptyAssistantText(companion.signal)}`,
+    `Latest response: ${preview.assistantText ?? emptyCompanionAssistantText(companion.signal)}`,
   );
 
-  sprite.status.textContent = signalLabel(companion.signal);
-  sprite.assistantText.textContent = preview.assistantText ?? emptyAssistantText(companion.signal);
-  sprite.composerButton.disabled = !preview.composerAvailable;
+  sprite.status.textContent = companionSignalLabel(companion.signal);
+  sprite.assistantText.textContent =
+    preview.assistantText ?? emptyCompanionAssistantText(companion.signal);
+  sprite.composerButton.hidden = !preview.showComposerButton;
+  sprite.composerButton.disabled = !preview.showComposerButton || !preview.composerAvailable;
   sprite.composerButton.setAttribute(
     "aria-label",
-    preview.composerAvailable
+    preview.showComposerButton && preview.composerAvailable
       ? "Reply from the desktop"
       : "Reply is available when the agent stops",
   );
-  sprite.composerButton.title = preview.composerAvailable
-    ? "Reply"
-    : "Available when the agent stops";
+  sprite.composerButton.title = preview.showComposerButton
+    ? preview.composerAvailable
+      ? "Reply"
+      : "Available when the agent stops"
+    : "";
 
   if (previousPreview && previousPreview.placement !== preview.placement) {
     for (const animation of sprite.layoutAnimations) animation.cancel();
@@ -539,6 +508,7 @@ function hitTest(clientX: number, clientY: number): PointerHit | null {
     const preview = companion.preview;
     if (
       preview?.mode === "preview" &&
+      preview.showComposerButton &&
       preview.composerAvailable &&
       pointInside(
         clientX,

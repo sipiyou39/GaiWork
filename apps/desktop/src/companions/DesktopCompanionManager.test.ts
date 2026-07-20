@@ -48,6 +48,7 @@ describe("isolated companion presentation", () => {
         bounds: { x: 110, y: 220, width: 192, height: 208 },
         preview: null,
         overlayBounds: { x: 10, y: 20, width: 1200, height: 800 },
+        desktopExpandedView: "response-and-composer",
       }),
       {
         companionId: "blue",
@@ -73,6 +74,53 @@ describe("isolated companion presentation", () => {
         { x: 0, y: 24, width: 1200, height: 800 },
       ),
       { x: 0, y: 24, width: 1200, height: 800 },
+    );
+  });
+
+  it("exposes the reply button only for the response-only preference", () => {
+    const projection = {
+      companionId: "blue" as const,
+      threadRef: {
+        environmentId: EnvironmentId.make("environment-test"),
+        threadId: ThreadId.make("thread-test"),
+      },
+      threadTitle: "Test thread",
+      signal: "idle" as const,
+      baseAnimation: "idle" as const,
+      accessibleLabel: "Test thread: Idle",
+      showOnDesktop: true,
+      preview: {
+        userMessageId: null,
+        userText: null,
+        assistantMessageId: null,
+        assistantText: "Latest response",
+        assistantStreaming: false,
+      },
+    };
+    const preview = {
+      placement: "top" as const,
+      mode: "preview" as const,
+      toggleBounds: { x: 579, y: 458, width: 34, height: 34 },
+      cardBounds: { x: 416, y: 274, width: 420, height: 176 },
+    };
+    const common = {
+      projection,
+      bounds: { x: 500, y: 500, width: 192, height: 208 },
+      preview,
+      overlayBounds: { x: 0, y: 24, width: 1_200, height: 800 },
+    };
+
+    assert.isFalse(
+      desktopCompanionPresentation({
+        ...common,
+        desktopExpandedView: "response-and-composer",
+      }).preview?.showComposerButton,
+    );
+    assert.isTrue(
+      desktopCompanionPresentation({
+        ...common,
+        desktopExpandedView: "response-only",
+      }).preview?.showComposerButton,
     );
   });
 

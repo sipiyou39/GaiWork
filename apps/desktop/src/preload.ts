@@ -308,6 +308,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.invoke(IpcChannels.COMPANION_PORTAL_METRICS_CHANNEL, input),
     setPortalInteractive: (input) =>
       ipcRenderer.invoke(IpcChannels.COMPANION_PORTAL_INTERACTIVE_CHANNEL, input),
+    focusPortal: (input) => ipcRenderer.invoke(IpcChannels.COMPANION_PORTAL_FOCUS_CHANNEL, input),
     closeComposer: (input) => ipcRenderer.invoke(IpcChannels.COMPANION_PORTAL_CLOSE_CHANNEL, input),
   },
   preview: {

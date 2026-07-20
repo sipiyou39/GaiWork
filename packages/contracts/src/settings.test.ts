@@ -37,6 +37,7 @@ describe("ClientSettings companions", () => {
 
     expect(settings.companionAssignments).toEqual([]);
     expect(settings.companionDesktopEnabled).toBe(true);
+    expect(settings.companionDesktopExpandedView).toBe("response-and-composer");
     expect(settings.companionDesktopPreviewsEnabled).toBe(true);
     expect(settings.companionDesktopScalePercent).toBe(100);
     expect(settings.companionShowOnDesktopByDefault).toBe(true);
@@ -46,6 +47,16 @@ describe("ClientSettings companions", () => {
   it("rejects unsupported companion sizes", () => {
     expect(() => decodeClientSettings({ companionDesktopScalePercent: 49 })).toThrow();
     expect(() => decodeClientSettings({ companionSidebarScalePercent: 151 })).toThrow();
+  });
+
+  it("accepts only supported desktop expanded views", () => {
+    expect(
+      decodeClientSettings({ companionDesktopExpandedView: "response-only" })
+        .companionDesktopExpandedView,
+    ).toBe("response-only");
+    expect(() =>
+      decodeClientSettings({ companionDesktopExpandedView: "separate-windows" }),
+    ).toThrow();
   });
 });
 

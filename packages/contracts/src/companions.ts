@@ -41,6 +41,12 @@ export const CompanionSidebarScalePercent = Schema.Int.check(
 );
 export type CompanionSidebarScalePercent = typeof CompanionSidebarScalePercent.Type;
 
+export const COMPANION_DESKTOP_EXPANDED_VIEWS = ["response-only", "response-and-composer"] as const;
+export const CompanionDesktopExpandedView = Schema.Literals(COMPANION_DESKTOP_EXPANDED_VIEWS);
+export type CompanionDesktopExpandedView = typeof CompanionDesktopExpandedView.Type;
+export const DEFAULT_COMPANION_DESKTOP_EXPANDED_VIEW: CompanionDesktopExpandedView =
+  "response-and-composer";
+
 export const COMPANION_ANIMATION_STATES = [
   "idle",
   "working",
@@ -130,6 +136,7 @@ export const DesktopCompanionPreviewPresentation = Schema.Struct({
   assistantText: Schema.NullOr(CompanionPreviewText(COMPANION_PREVIEW_ASSISTANT_MAX_LENGTH)),
   assistantStreaming: Schema.Boolean,
   composerAvailable: Schema.Boolean,
+  showComposerButton: Schema.Boolean,
   cardX: NonNegativeInt,
   cardY: NonNegativeInt,
   cardWidth: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10_000 })),
@@ -172,6 +179,9 @@ export const CompanionProjectionSnapshot = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPANION_DESKTOP_SCALE_PERCENT)),
   ),
   desktopPreviewsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  desktopExpandedView: CompanionDesktopExpandedView.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPANION_DESKTOP_EXPANDED_VIEW)),
+  ),
   companions: Schema.Array(CompanionProjection).check(Schema.isMaxLength(COMPANION_IDS.length)),
 });
 export type CompanionProjectionSnapshot = typeof CompanionProjectionSnapshot.Type;
@@ -193,6 +203,13 @@ export const CompanionPointerEvent = Schema.Struct({
 export type CompanionPointerEvent = typeof CompanionPointerEvent.Type;
 
 const DesktopCompanionPortalToken = TrimmedNonEmptyString;
+
+export const DESKTOP_COMPANION_PORTAL_SURFACES = [
+  "composer-only",
+  "response-and-composer",
+] as const;
+export const DesktopCompanionPortalSurface = Schema.Literals(DESKTOP_COMPANION_PORTAL_SURFACES);
+export type DesktopCompanionPortalSurface = typeof DesktopCompanionPortalSurface.Type;
 
 export const DesktopCompanionPortalLayout = Schema.Struct({
   token: DesktopCompanionPortalToken,
@@ -218,6 +235,7 @@ export const DesktopCompanionPortalRequest = Schema.Struct({
   url: TrimmedNonEmptyString,
   companionId: CompanionId,
   threadRef: ScopedThreadRef,
+  surface: DesktopCompanionPortalSurface,
   layout: DesktopCompanionPortalLayout,
 });
 export type DesktopCompanionPortalRequest = typeof DesktopCompanionPortalRequest.Type;

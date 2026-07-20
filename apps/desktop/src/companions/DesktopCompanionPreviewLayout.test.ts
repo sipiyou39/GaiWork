@@ -54,6 +54,31 @@ describe("desktop companion preview placement", () => {
     expect(result.cardBounds.x + result.cardBounds.width).toBeLessThanOrEqual(1_428);
   });
 
+  it("keeps a full combined composer clear of the companion after screen clamping", () => {
+    const companionBounds = { x: 800, y: 600, width: 192, height: 208 };
+    const result = chooseCompanionPreviewGeometry({
+      companionBounds,
+      workArea,
+      cardSize: { width: 768, height: 620 },
+    });
+    const overlapWidth = Math.max(
+      0,
+      Math.min(result.cardBounds.x + result.cardBounds.width, companionBounds.x + 192) -
+        Math.max(result.cardBounds.x, companionBounds.x),
+    );
+    const overlapHeight = Math.max(
+      0,
+      Math.min(result.cardBounds.y + result.cardBounds.height, companionBounds.y + 208) -
+        Math.max(result.cardBounds.y, companionBounds.y),
+    );
+
+    expect(overlapWidth * overlapHeight).toBe(0);
+    expect(result.cardBounds.x).toBeGreaterThanOrEqual(12);
+    expect(result.cardBounds.y).toBeGreaterThanOrEqual(12);
+    expect(result.cardBounds.x + result.cardBounds.width).toBeLessThanOrEqual(1_428);
+    expect(result.cardBounds.y + result.cardBounds.height).toBeLessThanOrEqual(888);
+  });
+
   it("uses 24-point hysteresis to avoid placement oscillation during a drag", () => {
     const companionBounds = { x: 624, y: 250, width: 192, height: 208 };
     const withoutHistory = chooseCompanionPreviewGeometry({ companionBounds, workArea });

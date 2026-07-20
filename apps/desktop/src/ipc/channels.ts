@@ -24,6 +24,7 @@ export const COMPANION_PORTAL_READY_CHANNEL = "desktop:companions-portal-ready";
 export const COMPANION_PORTAL_CLOSING_CHANNEL = "desktop:companions-portal-closing";
 export const COMPANION_PORTAL_METRICS_CHANNEL = "desktop:companions-portal-metrics";
 export const COMPANION_PORTAL_INTERACTIVE_CHANNEL = "desktop:companions-portal-interactive";
+export const COMPANION_PORTAL_FOCUS_CHANNEL = "desktop:companions-portal-focus";
 export const COMPANION_PORTAL_CLOSE_CHANNEL = "desktop:companions-portal-close";
 export const UPDATE_STATE_CHANNEL = "desktop:update-state";
 export const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";

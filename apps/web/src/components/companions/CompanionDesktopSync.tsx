@@ -1,9 +1,9 @@
-import {
-  deriveLatestCompanionConversationPreview,
-  projectCompanionState,
-} from "@t3tools/client-runtime/companions";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { CompanionAssignment, CompanionProjection } from "@t3tools/contracts";
+import type {
+  CompanionAssignment,
+  CompanionDesktopExpandedView,
+  CompanionProjection,
+} from "@t3tools/contracts";
 import {
   Fragment,
   useCallback,
@@ -15,9 +15,13 @@ import {
 } from "react";
 
 import { useClientSettings, useClientSettingsHydrated } from "~/hooks/useSettings";
-import { useThreadMessages, useThreadShell } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
-import { useUiStateStore } from "~/uiStateStore";
+import {
+  projectUnavailableCompanion,
+  useCompanionThreadProjection,
+} from "./useCompanionThreadProjection";
+
+export { projectUnavailableCompanion } from "./useCompanionThreadProjection";
 
 const PREVIEW_SYNC_INTERVAL_MS = 100;
 
@@ -29,8 +33,9 @@ function projectionCoreSignature(
   projections: readonly CompanionProjection[],
   desktopScalePercent: number,
   desktopPreviewsEnabled: boolean,
+  desktopExpandedView: CompanionDesktopExpandedView,
 ): string {
-  return `${desktopScalePercent}\u0004${desktopPreviewsEnabled ? "1" : "0"}\u0003${projections
+  return `${desktopScalePercent}\u0004${desktopPreviewsEnabled ? "1" : "0"}\u0004${desktopExpandedView}\u0003${projections
     .map((projection) =>
       [
         projection.companionId,
@@ -50,11 +55,13 @@ function projectionSignature(
   projections: readonly CompanionProjection[],
   desktopScalePercent: number,
   desktopPreviewsEnabled: boolean,
+  desktopExpandedView: CompanionDesktopExpandedView,
 ): string {
   return `${projectionCoreSignature(
     projections,
     desktopScalePercent,
     desktopPreviewsEnabled,
+    desktopExpandedView,
   )}\u0005${projections
     .map((projection) => {
       const preview = projection.preview;
@@ -78,25 +85,6 @@ function assignmentProjectionKey(
   return `${companionId}\u0000${scopedThreadKey(threadRef)}`;
 }
 
-export function projectUnavailableCompanion(
-  assignment: CompanionAssignment,
-  previous?: CompanionProjection,
-  desktopEnabled = true,
-  previewEnabled = true,
-): CompanionProjection {
-  const threadTitle = previous?.threadTitle ?? "Unavailable conversation";
-  return {
-    companionId: assignment.companionId,
-    threadRef: assignment.threadRef,
-    threadTitle,
-    signal: "connecting",
-    baseAnimation: "thinking",
-    accessibleLabel: `${threadTitle}: Reconnecting`,
-    showOnDesktop: desktopEnabled && assignment.showOnDesktop,
-    preview: previewEnabled ? (previous?.preview ?? null) : null,
-  };
-}
-
 function CompanionProjectionObserver({
   assignment,
   desktopEnabled,
@@ -110,52 +98,13 @@ function CompanionProjectionObserver({
   readonly connectionAvailable: boolean;
   readonly onProjection: (key: string, projection: CompanionProjection) => void;
 }) {
-  const threadKey = scopedThreadKey(assignment.threadRef);
   const projectionKey = assignmentProjectionKey(assignment.companionId, assignment.threadRef);
-  const thread = useThreadShell(assignment.threadRef);
-  const previewEnabled = desktopEnabled && desktopPreviewsEnabled && assignment.showOnDesktop;
-  const messages = useThreadMessages(previewEnabled ? assignment.threadRef : null);
-  const acknowledgedTurnId = useUiStateStore(
-    (state) => state.companionAcknowledgedTurnIdByThreadKey[threadKey],
-  );
-  const previousRef = useRef<CompanionProjection | undefined>(undefined);
-
-  const projection = useMemo<CompanionProjection>(() => {
-    if (!thread) {
-      return projectUnavailableCompanion(
-        assignment,
-        previousRef.current,
-        desktopEnabled,
-        previewEnabled,
-      );
-    }
-    const state = projectCompanionState({
-      thread,
-      acknowledgedTurnId,
-      connectionAvailable,
-    });
-    const threadTitle = thread.title.trim() || "Untitled conversation";
-    return {
-      companionId: assignment.companionId,
-      threadRef: assignment.threadRef,
-      threadTitle,
-      signal: state.signal,
-      baseAnimation: state.animation,
-      accessibleLabel: `${threadTitle}: ${state.accessibleLabel}`,
-      showOnDesktop: desktopEnabled && assignment.showOnDesktop,
-      preview: previewEnabled ? deriveLatestCompanionConversationPreview(messages) : null,
-    };
-  }, [
-    acknowledgedTurnId,
+  const projection = useCompanionThreadProjection({
     assignment,
-    connectionAvailable,
     desktopEnabled,
-    messages,
-    previewEnabled,
-    thread,
-  ]);
-
-  previousRef.current = projection;
+    desktopPreviewsEnabled,
+    connectionAvailable,
+  });
   useLayoutEffect(() => {
     onProjection(projectionKey, projection);
   }, [onProjection, projection, projectionKey]);
@@ -169,6 +118,9 @@ export function CompanionDesktopSync() {
   const desktopEnabled = useClientSettings((settings) => settings.companionDesktopEnabled);
   const desktopPreviewsEnabled = useClientSettings(
     (settings) => settings.companionDesktopPreviewsEnabled,
+  );
+  const desktopExpandedView = useClientSettings(
+    (settings) => settings.companionDesktopExpandedView,
   );
   const desktopScalePercent = useClientSettings(
     (settings) => settings.companionDesktopScalePercent,
@@ -242,8 +194,14 @@ export function CompanionDesktopSync() {
       projections,
       desktopScalePercent,
       desktopPreviewsEnabled,
+      desktopExpandedView,
     );
-    const signature = projectionSignature(projections, desktopScalePercent, desktopPreviewsEnabled);
+    const signature = projectionSignature(
+      projections,
+      desktopScalePercent,
+      desktopPreviewsEnabled,
+      desktopExpandedView,
+    );
     if (signature === previousSignatureRef.current) return;
 
     const coreChanged = coreSignature !== previousCoreSignatureRef.current;
@@ -269,6 +227,7 @@ export function CompanionDesktopSync() {
         revision,
         desktopScalePercent,
         desktopPreviewsEnabled,
+        desktopExpandedView,
         companions: projections,
       }).catch((error) => {
         console.error("[COMPANIONS] desktop projection sync failed", error);
@@ -286,7 +245,14 @@ export function CompanionDesktopSync() {
     } else {
       syncTimeoutRef.current = setTimeout(send, PREVIEW_SYNC_INTERVAL_MS);
     }
-  }, [desktopPreviewsEnabled, desktopScalePercent, hydrated, projections, retryToken]);
+  }, [
+    desktopExpandedView,
+    desktopPreviewsEnabled,
+    desktopScalePercent,
+    hydrated,
+    projections,
+    retryToken,
+  ]);
 
   useEffect(
     () => () => {

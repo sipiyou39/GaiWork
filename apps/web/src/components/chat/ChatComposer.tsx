@@ -33,6 +33,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import {
   clampCollapsedComposerCursor,
@@ -510,6 +511,7 @@ export interface ChatComposerProps {
   keybindings: ResolvedKeybindingsConfig;
   terminalOpen: boolean;
   gitCwd: string | null;
+  surfaceHeader?: ReactNode;
 
   // Refs the parent needs kept in sync
   promptRef: React.RefObject<string>;
@@ -600,6 +602,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     keybindings,
     terminalOpen,
     gitCwd,
+    surfaceHeader,
     promptRef,
     composerRef,
     composerImagesRef,
@@ -2084,6 +2087,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   // Render
   // ------------------------------------------------------------------
+  const surfaceTopPanelClassName = cn(
+    "border-b border-border/65 bg-muted/20",
+    surfaceHeader ? null : "rounded-t-[19px]",
+  );
+
   return (
     <form
       ref={composerFormRef}
@@ -2129,16 +2137,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             scheduleComposerCollapseCheck();
           }}
         >
+          {surfaceHeader ? (
+            <div data-chat-composer-surface-header="true">{surfaceHeader}</div>
+          ) : null}
+
           {!isComposerCollapsedMobile &&
             (activePendingApproval ? (
-              <div className="rounded-t-[19px] border-b border-border/65 bg-muted/20">
+              <div className={surfaceTopPanelClassName}>
                 <ComposerPendingApprovalPanel
                   approval={activePendingApproval}
                   pendingCount={pendingApprovals.length}
                 />
               </div>
             ) : pendingUserInputs.length > 0 ? (
-              <div className="rounded-t-[19px] border-b border-border/65 bg-muted/20">
+              <div className={surfaceTopPanelClassName}>
                 <ComposerPendingUserInputPanel
                   pendingUserInputs={pendingUserInputs}
                   respondingRequestIds={respondingRequestIds}
@@ -2149,7 +2161,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 />
               </div>
             ) : showPlanFollowUpPrompt && activeProposedPlan ? (
-              <div className="rounded-t-[19px] border-b border-border/65 bg-muted/20">
+              <div className={surfaceTopPanelClassName}>
                 <ComposerPlanFollowUpBanner
                   key={activeProposedPlan.id}
                   planTitle={proposedPlanTitle(activeProposedPlan.planMarkdown) ?? null}
@@ -2158,10 +2170,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             ) : null)}
 
           {isComposerCollapsedMobile && activePendingApproval ? (
-            <div
-              className="rounded-t-[19px] border-b border-border/65 bg-muted/20"
-              data-chat-composer-collapsed-controls="true"
-            >
+            <div className={surfaceTopPanelClassName} data-chat-composer-collapsed-controls="true">
               <ComposerPendingApprovalPanel
                 approval={activePendingApproval}
                 pendingCount={pendingApprovals.length}
@@ -2175,10 +2184,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               </div>
             </div>
           ) : isComposerCollapsedMobile && pendingUserInputs.length > 0 ? (
-            <div
-              className="rounded-t-[19px] border-b border-border/65 bg-muted/20"
-              data-chat-composer-collapsed-controls="true"
-            >
+            <div className={surfaceTopPanelClassName} data-chat-composer-collapsed-controls="true">
               <ComposerPendingUserInputPanel
                 pendingUserInputs={pendingUserInputs}
                 respondingRequestIds={respondingRequestIds}

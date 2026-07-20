@@ -979,6 +979,7 @@ export interface DesktopCompanionsBridge {
   portalClosing: (input: DesktopCompanionPortalTokenInput) => Promise<void>;
   reportCardMetrics: (input: DesktopCompanionPortalMetricsInput) => Promise<void>;
   setPortalInteractive: (input: DesktopCompanionPortalInteractiveInput) => Promise<void>;
+  focusPortal: (input: DesktopCompanionPortalTokenInput) => Promise<void>;
   closeComposer: (input: DesktopCompanionPortalTokenInput) => Promise<void>;
 }
 

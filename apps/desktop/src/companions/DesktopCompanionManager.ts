@@ -4,12 +4,15 @@ import {
   DesktopCompanionPortalTokenInput,
   CompanionPointerEvent,
   CompanionProjectionSnapshot,
+  DEFAULT_COMPANION_DESKTOP_EXPANDED_VIEW,
   DEFAULT_COMPANION_DESKTOP_SCALE_PERCENT,
   type CompanionId,
+  type CompanionDesktopExpandedView,
   type CompanionProjection,
   type DesktopCompanionCardMode,
   type DesktopCompanionOverlayPresentation,
   type DesktopCompanionPortalLayout,
+  type DesktopCompanionPortalSurface,
   type DesktopCompanionPresentation,
   type MainWindowAttentionState as MainWindowAttentionStateType,
 } from "@t3tools/contracts";
@@ -44,6 +47,7 @@ import {
   registerDesktopCompanionPortal,
   resetDesktopCompanionPortalRegistry,
 } from "./DesktopCompanionPortalRegistry.ts";
+import { focusDesktopCompanionPortalWindow } from "./DesktopCompanionNativeFocus.ts";
 import {
   COMPANION_COMPOSER_BUTTON_INSET,
   COMPANION_COMPOSER_BUTTON_SIZE,
@@ -119,6 +123,7 @@ interface CompanionPortalSession {
   readonly frameName: string;
   readonly url: string;
   readonly companionId: CompanionId;
+  readonly surface: DesktopCompanionPortalSurface;
   readonly mainWindow: Electron.BrowserWindow;
   window: Electron.BrowserWindow | null;
   displayId: string;
@@ -177,6 +182,7 @@ export function desktopCompanionPresentation(input: {
   readonly bounds: Rectangle;
   readonly preview: CompanionLayout["preview"];
   readonly overlayBounds: Rectangle;
+  readonly desktopExpandedView: CompanionDesktopExpandedView;
 }): DesktopCompanionPresentation {
   const conversationPreview = input.projection.preview;
   const preview =
@@ -191,6 +197,7 @@ export function desktopCompanionPresentation(input: {
           composerAvailable: !["working", "connecting", "offline"].includes(
             input.projection.signal,
           ),
+          showComposerButton: input.desktopExpandedView === "response-only",
           cardX: Math.max(0, Math.round(input.preview.cardBounds.x - input.overlayBounds.x)),
           cardY: Math.max(0, Math.round(input.preview.cardBounds.y - input.overlayBounds.y)),
           cardWidth: Math.round(input.preview.cardBounds.width),
@@ -284,6 +291,7 @@ export const make = Effect.gen(function* () {
   let desiredProjections = new Map<CompanionId, CompanionProjection>();
   let desktopScalePercent = DEFAULT_COMPANION_DESKTOP_SCALE_PERCENT;
   let desktopPreviewsEnabled = true;
+  let desktopExpandedView = DEFAULT_COMPANION_DESKTOP_EXPANDED_VIEW;
   let desiredDisplayIds = new Set<string>();
   let acceptedSnapshot: AcceptedSnapshot | null = null;
   let reconciliationFiber: Fiber.Fiber<void, never> | null = null;
@@ -317,6 +325,7 @@ export const make = Effect.gen(function* () {
         bounds: layout.bounds,
         preview: layout.preview,
         overlayBounds: entry.overlayBounds,
+        desktopExpandedView,
       }),
     ),
   });
@@ -422,7 +431,8 @@ export const make = Effect.gen(function* () {
       });
       session.placement = geometry.placement;
       const portalMode =
-        activePortal?.companionId === layout.projection.companionId && activePortal.ready
+        activePortal?.companionId === layout.projection.companionId &&
+        (activePortal.ready || activePortal.surface === "response-and-composer")
           ? "composer"
           : null;
       layout.preview = {
@@ -689,7 +699,7 @@ export const make = Effect.gen(function* () {
     if (layout.preview === null) return null;
     if (target === "toggle") return layout.preview.toggleBounds;
     if (target === "composer") {
-      if (layout.preview.mode !== "preview") return null;
+      if (desktopExpandedView !== "response-only" || layout.preview.mode !== "preview") return null;
       return {
         x:
           layout.preview.cardBounds.x +
@@ -812,7 +822,10 @@ export const make = Effect.gen(function* () {
     cancelDesktopCompanionPortal(token);
     if (portal.openTimeoutFiber !== null) runFork(Fiber.interrupt(portal.openTimeoutFiber));
     const session = previewSessions.get(portal.companionId);
-    if (session) session.cardSize = undefined;
+    if (session) {
+      session.expanded = false;
+      session.cardSize = undefined;
+    }
     if (portal.window && !portal.window.isDestroyed()) portal.window.destroy();
     void runPromise(reconcileOverlays).catch((cause) => {
       void runPromise(
@@ -859,6 +872,17 @@ export const make = Effect.gen(function* () {
       if (url !== portal.url) event.preventDefault();
     });
     window.webContents.on("render-process-gone", () => closePortalNow(portal.token));
+    window.on("focus", () => {
+      if (
+        environment.platform !== "darwin" ||
+        activePortal?.token !== portal.token ||
+        window.isDestroyed()
+      ) {
+        return;
+      }
+      Electron.app.focus({ steal: true });
+      window.webContents.focus();
+    });
     window.webContents.on(
       "did-fail-load",
       (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
@@ -880,13 +904,21 @@ export const make = Effect.gen(function* () {
 
   const openComposer = Effect.fn("desktop.companions.openComposer")(function* (
     projection: CompanionProjection,
+    surface: DesktopCompanionPortalSurface,
   ) {
-    if (["working", "connecting", "offline"].includes(projection.signal)) return;
+    if (
+      surface === "composer-only" &&
+      ["working", "connecting", "offline"].includes(projection.signal)
+    ) {
+      return;
+    }
     const located = findDraggedLayout(projection.companionId);
     const mainWindow = yield* currentMain;
     if (!located?.layout.preview || mainWindow === null || mainWindow.isDestroyed()) return;
     if (activePortal) {
-      if (activePortal.companionId === projection.companionId) return;
+      if (activePortal.companionId === projection.companionId && activePortal.surface === surface) {
+        return;
+      }
       requestPortalClose(activePortal);
       closePortalNow(activePortal.token);
     }
@@ -901,6 +933,7 @@ export const make = Effect.gen(function* () {
       frameName,
       url,
       companionId: projection.companionId,
+      surface,
       mainWindow,
       window: null,
       displayId: located.entry.displayId,
@@ -932,6 +965,7 @@ export const make = Effect.gen(function* () {
       url,
       companionId: projection.companionId,
       threadRef: projection.threadRef,
+      surface,
       layout,
     });
   });
@@ -942,6 +976,13 @@ export const make = Effect.gen(function* () {
     if (activePortal?.companionId === projection.companionId) {
       previewSessionFor(projection).expanded = false;
       requestPortalClose(activePortal);
+      return;
+    }
+    if (desktopExpandedView === "response-and-composer") {
+      if (projection.signal === "completed-unseen") {
+        yield* acknowledgeProjection(projection);
+      }
+      yield* openComposer(projection, "response-and-composer");
       return;
     }
     const session = previewSessionFor(projection);
@@ -1027,7 +1068,7 @@ export const make = Effect.gen(function* () {
       if (press.target === "toggle") {
         yield* togglePreview(layout.projection);
       } else if (press.target === "composer") {
-        yield* openComposer(layout.projection);
+        yield* openComposer(layout.projection, "composer-only");
       } else {
         yield* acknowledgeProjection(layout.projection);
       }
@@ -1123,20 +1164,25 @@ export const make = Effect.gen(function* () {
     const accepted = acceptCompanionSnapshot(acceptedSnapshot, snapshot);
     if (accepted === null) return;
     acceptedSnapshot = accepted;
+    const expandedViewChanged = desktopExpandedView !== snapshot.desktopExpandedView;
     desktopScalePercent = snapshot.desktopScalePercent;
     desktopPreviewsEnabled = snapshot.desktopPreviewsEnabled;
+    desktopExpandedView = snapshot.desktopExpandedView;
     desiredProjections = new Map(
       snapshot.companions
         .filter((projection) => projection.showOnDesktop)
         .map((projection) => [projection.companionId, projection] as const),
     );
-    if (activePortal && !desktopPreviewsEnabled) {
+    if (activePortal && (!desktopPreviewsEnabled || expandedViewChanged)) {
       closePortalNow(activePortal.token);
     } else if (activePortal) {
       const portalProjection = desiredProjections.get(activePortal.companionId);
       if (!portalProjection) {
         closePortalNow(activePortal.token);
-      } else if (["working", "connecting", "offline"].includes(portalProjection.signal)) {
+      } else if (
+        activePortal.surface === "composer-only" &&
+        ["working", "connecting", "offline"].includes(portalProjection.signal)
+      ) {
         requestPortalClose(activePortal);
       }
     }
@@ -1201,6 +1247,7 @@ export const make = Effect.gen(function* () {
       Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_CLOSING_CHANNEL);
       Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_METRICS_CHANNEL);
       Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_INTERACTIVE_CHANNEL);
+      Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_FOCUS_CHANNEL);
       Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_CLOSE_CHANNEL);
 
       Electron.ipcMain.handle(
@@ -1252,10 +1299,11 @@ export const make = Effect.gen(function* () {
                 portal.lastLayoutSignature = null;
                 const projection = desiredProjections.get(portal.companionId);
                 if (projection) yield* acknowledgeProjection(projection);
-                if (!portal.window.isDestroyed()) {
-                  portal.window.show();
-                  portal.window.focus();
-                }
+                focusDesktopCompanionPortalWindow({
+                  application: Electron.app,
+                  window: portal.window,
+                  platform: environment.platform,
+                });
                 portal.ready = true;
                 yield* reconcileOverlays;
               }),
@@ -1272,6 +1320,8 @@ export const make = Effect.gen(function* () {
                 const portal = activePortal;
                 if (!portal || portal.token !== input.token) return;
                 portal.ready = false;
+                const session = previewSessions.get(portal.companionId);
+                if (session) session.expanded = false;
                 yield* reconcileOverlays;
               }),
             ),
@@ -1319,6 +1369,24 @@ export const make = Effect.gen(function* () {
               ),
             ),
           ),
+      );
+      Electron.ipcMain.handle(IpcChannels.COMPANION_PORTAL_FOCUS_CHANNEL, (event, raw: unknown) =>
+        runPromise(
+          decodePortalTokenInput(raw).pipe(
+            Effect.flatMap((input) =>
+              Effect.gen(function* () {
+                if (!(yield* isCurrentMainSender(event.sender.id))) return;
+                const portal = activePortal;
+                if (!portal || portal.token !== input.token || !portal.window) return;
+                focusDesktopCompanionPortalWindow({
+                  application: Electron.app,
+                  window: portal.window,
+                  platform: environment.platform,
+                });
+              }),
+            ),
+          ),
+        ),
       );
       Electron.ipcMain.handle(IpcChannels.COMPANION_PORTAL_CLOSE_CHANNEL, (event, raw: unknown) =>
         runPromise(
@@ -1378,6 +1446,7 @@ export const make = Effect.gen(function* () {
         Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_CLOSING_CHANNEL);
         Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_METRICS_CHANNEL);
         Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_INTERACTIVE_CHANNEL);
+        Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_FOCUS_CHANNEL);
         Electron.ipcMain.removeHandler(IpcChannels.COMPANION_PORTAL_CLOSE_CHANNEL);
         Electron.ipcMain.removeAllListeners(IpcChannels.COMPANION_GET_PROJECTION_CHANNEL);
         Electron.ipcMain.removeAllListeners(IpcChannels.COMPANION_READY_CHANNEL);

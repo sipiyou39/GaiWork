@@ -179,13 +179,20 @@ export function chooseCompanionPreviewGeometry(input: {
   const placements: readonly CompanionPreviewPlacement[] = ["top", "bottom", "right", "left"];
   const candidates = placements.map((placement, preferenceIndex) => {
     const raw = rawCandidate(placement, input.companionBounds, cardWidth, cardHeight);
+    const constrained = {
+      ...raw,
+      cardBounds: clampRectangle(raw.cardBounds, input.workArea),
+      toggleBounds: clampRectangle(raw.toggleBounds, input.workArea),
+    };
     const obstaclePenalty = (input.obstacles ?? []).reduce(
       (total, obstacle) =>
         total +
-        intersectionArea(raw.cardBounds, obstacle) * 1_000 +
-        intersectionArea(raw.toggleBounds, obstacle) * 5_000,
+        intersectionArea(constrained.cardBounds, obstacle) * 1_000 +
+        intersectionArea(constrained.toggleBounds, obstacle) * 5_000,
       0,
     );
+    const companionOverlapPenalty =
+      intersectionArea(constrained.cardBounds, input.companionBounds) * 1_000_000;
     const hysteresis =
       placement === input.previousPlacement ? -COMPANION_PREVIEW_PLACEMENT_HYSTERESIS * 100_000 : 0;
     return {
@@ -194,6 +201,7 @@ export function chooseCompanionPreviewGeometry(input: {
         overflowPenalty(raw.cardBounds, input.workArea) +
         overflowPenalty(raw.toggleBounds, input.workArea) +
         obstaclePenalty +
+        companionOverlapPenalty +
         preferenceIndex * 1_000 +
         hysteresis,
     };

@@ -52,6 +52,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
@@ -430,6 +431,7 @@ type ChatViewProps =
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
       renderMode?: "full" | "desktop-composer";
+      desktopComposerHeader?: ReactNode;
       onDesktopComposerSubmitSuccess?: () => void;
       routeKind: "server";
       draftId?: never;
@@ -441,6 +443,7 @@ type ChatViewProps =
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
       renderMode?: "full" | "desktop-composer";
+      desktopComposerHeader?: ReactNode;
       onDesktopComposerSubmitSuccess?: () => void;
       routeKind: "draft";
       draftId: DraftId;
@@ -1095,6 +1098,7 @@ function ChatViewContent(props: ChatViewProps) {
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
     renderMode = "full",
+    desktopComposerHeader,
     onDesktopComposerSubmitSuccess,
   } = props;
   const isDesktopComposer = renderMode === "desktop-composer";
@@ -5209,6 +5213,7 @@ function ChatViewContent(props: ChatViewProps) {
       keybindings={keybindings}
       terminalOpen={Boolean(terminalUiState.terminalOpen)}
       gitCwd={gitCwd}
+      surfaceHeader={isDesktopComposer ? desktopComposerHeader : undefined}
       promptRef={promptRef}
       composerImagesRef={composerImagesRef}
       composerTerminalContextsRef={composerTerminalContextsRef}

@@ -51,6 +51,13 @@ describe("companion IPC contracts", () => {
         companions: [],
       }).desktopPreviewsEnabled,
     ).toBe(true);
+    expect(
+      decodeSnapshot({
+        sourceEpoch: "epoch-test",
+        revision: 0,
+        companions: [],
+      }).desktopExpandedView,
+    ).toBe("response-and-composer");
   });
 
   it("rejects desktop scales outside the supported range", () => {
@@ -95,6 +102,33 @@ describe("companion IPC contracts", () => {
         url: "gaiwork://app/companion-portal.html?token=portal-token",
         companionId: "blue",
         threadRef: { environmentId: "environment-test", threadId: "thread-test" },
+        surface: "response-and-composer",
+        layout: {
+          token: "portal-token",
+          revision: 0,
+          displayId: "display-test",
+          placement: "top",
+          cardX: 120,
+          cardY: 80,
+          cardWidth: 420,
+          cardHeight: 176,
+          compactCardX: 120,
+          compactCardY: 80,
+          compactCardWidth: 420,
+          compactCardHeight: 176,
+          workAreaWidth: 1_440,
+          workAreaHeight: 900,
+        },
+      }).surface,
+    ).toBe("response-and-composer");
+    expect(
+      decodePortalRequest({
+        token: "portal-token",
+        frameName: "gaiwork-companion-blue-portal-token",
+        url: "gaiwork://app/companion-portal.html?token=portal-token",
+        companionId: "blue",
+        threadRef: { environmentId: "environment-test", threadId: "thread-test" },
+        surface: "composer-only",
         layout: {
           token: "portal-token",
           revision: 0,

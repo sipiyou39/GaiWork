@@ -1,5 +1,6 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type {
+  CompanionAssignment,
   DesktopCompanionPortalLayout,
   DesktopCompanionPortalRequest,
 } from "@t3tools/contracts";
@@ -7,6 +8,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -15,8 +17,11 @@ import { createPortal } from "react-dom";
 
 import { useDesktopCompanionComposerStore } from "~/desktopCompanionComposerStore";
 import { cn } from "~/lib/utils";
+import { useEnvironments } from "~/state/environments";
 import ChatView from "../ChatView";
 import { ComposerSurfaceEnvironmentProvider } from "../chat/ComposerSurfaceEnvironment";
+import { companionSignalLabel, emptyCompanionAssistantText } from "./companionPreviewPresentation";
+import { useCompanionThreadProjection } from "./useCompanionThreadProjection";
 
 const PORTAL_ROOT_ID = "companion-portal-root";
 const COMPOSER_WIDTH = 768;
@@ -82,6 +87,55 @@ function prefersReducedMotion(targetWindow: Pick<Window, "matchMedia">): boolean
   } catch {
     return false;
   }
+}
+
+function DesktopCompanionResponseHeader({
+  request,
+}: {
+  readonly request: DesktopCompanionPortalRequest;
+}) {
+  const assignment = useMemo<CompanionAssignment>(
+    () => ({
+      companionId: request.companionId,
+      threadRef: request.threadRef,
+      showOnDesktop: true,
+    }),
+    [request.companionId, request.threadRef],
+  );
+  const { environments } = useEnvironments();
+  const connectionAvailable = environments.some(
+    (environment) =>
+      environment.environmentId === request.threadRef.environmentId &&
+      environment.connection.phase === "connected",
+  );
+  const projection = useCompanionThreadProjection({
+    assignment,
+    desktopEnabled: true,
+    desktopPreviewsEnabled: true,
+    connectionAvailable,
+  });
+  const assistantText =
+    projection.preview?.assistantText ?? emptyCompanionAssistantText(projection.signal);
+  const assistantStreaming = projection.preview?.assistantStreaming ?? false;
+
+  return (
+    <section
+      className="desktop-companion-response-header"
+      data-signal={projection.signal}
+      data-streaming={assistantStreaming ? "true" : "false"}
+      aria-label={`Latest response. ${companionSignalLabel(projection.signal)}`}
+      aria-busy={assistantStreaming}
+    >
+      <div className="desktop-companion-response-meta">
+        <span className="desktop-companion-response-status-dot" aria-hidden="true" />
+        <span className="desktop-companion-response-status">
+          {companionSignalLabel(projection.signal)}
+        </span>
+        <span className="desktop-companion-response-label">Latest response</span>
+      </div>
+      <p className="desktop-companion-response-text">{assistantText}</p>
+    </section>
+  );
 }
 
 function DesktopCompanionComposerCard({
@@ -249,6 +303,7 @@ function DesktopCompanionComposerCard({
       className={cn("desktop-companion-portal-card", `is-${session.phase}`)}
       data-companion-portal-interactive="true"
       data-placement={session.layout.placement}
+      data-surface={session.request.surface}
       style={style}
     >
       <div className="desktop-companion-portal-content">
@@ -258,6 +313,11 @@ function DesktopCompanionComposerCard({
           routeKind="server"
           renderMode="desktop-composer"
           reserveTitleBarControlInset={false}
+          desktopComposerHeader={
+            session.request.surface === "response-and-composer" ? (
+              <DesktopCompanionResponseHeader request={session.request} />
+            ) : undefined
+          }
           onDesktopComposerSubmitSuccess={onRequestClose}
         />
       </div>
@@ -402,6 +462,14 @@ export function CompanionPortalHost() {
 
     let interactive = false;
     let pointerFrame: number | null = null;
+    let focusFrame: number | null = null;
+    const requestNativeFocus = () => {
+      if (focusFrame !== null) return;
+      void window.desktopBridge?.companions?.focusPortal({ token: request.token });
+      focusFrame = childWindow.requestAnimationFrame(() => {
+        focusFrame = null;
+      });
+    };
     const updateInteractive = (next: boolean) => {
       if (next === interactive) return;
       interactive = next;
@@ -420,6 +488,8 @@ export function CompanionPortalHost() {
       });
     };
     const onPointerLeave = () => updateInteractive(false);
+    const onPointerDown = () => requestNativeFocus();
+    const onFocusIn = () => requestNativeFocus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       requestClose(request.token);
@@ -427,15 +497,20 @@ export function CompanionPortalHost() {
     const onBeforeUnload = () => finishClose(request.token, true, false);
     childWindow.addEventListener("mousemove", onPointerMove, true);
     childWindow.addEventListener("mouseleave", onPointerLeave, true);
+    childWindow.addEventListener("pointerdown", onPointerDown, true);
+    childWindow.addEventListener("focusin", onFocusIn, true);
     childWindow.addEventListener("keydown", onKeyDown);
     childWindow.addEventListener("beforeunload", onBeforeUnload, { once: true });
     return () => {
       appearanceObserver.disconnect();
       childWindow.removeEventListener("mousemove", onPointerMove, true);
       childWindow.removeEventListener("mouseleave", onPointerLeave, true);
+      childWindow.removeEventListener("pointerdown", onPointerDown, true);
+      childWindow.removeEventListener("focusin", onFocusIn, true);
       childWindow.removeEventListener("keydown", onKeyDown);
       childWindow.removeEventListener("beforeunload", onBeforeUnload);
       if (pointerFrame !== null) childWindow.cancelAnimationFrame(pointerFrame);
+      if (focusFrame !== null) childWindow.cancelAnimationFrame(focusFrame);
       if (!childWindow.closed) {
         void window.desktopBridge?.companions?.setPortalInteractive({
           token: request.token,
