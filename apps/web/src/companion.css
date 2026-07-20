@@ -9,6 +9,11 @@ body,
 }
 
 :root {
+  --companion-surface-card: color-mix(
+    in srgb,
+    color-mix(in srgb, oklch(14.5% 0 0) 95%, white) 98%,
+    white
+  );
   color-scheme: dark light;
   font-family:
     -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, sans-serif;
@@ -151,7 +156,7 @@ article {
   outline: none;
   border: 1px solid rgb(255 255 255 / 14%);
   border-radius: 22px;
-  background: linear-gradient(145deg, rgb(255 255 255 / 9%), transparent 44%), rgb(29 29 32 / 82%);
+  background: var(--companion-surface-card);
   box-shadow:
     0 22px 55px rgb(0 0 0 / 34%),
     0 5px 16px rgb(0 0 0 / 24%),
@@ -427,6 +432,10 @@ article {
 }
 
 @media (prefers-color-scheme: light) {
+  :root {
+    --companion-surface-card: white;
+  }
+
   .companion {
     filter: drop-shadow(0 10px 13px rgb(0 0 0 / 13%));
   }
@@ -464,8 +473,7 @@ article {
   .conversation-preview {
     color: rgb(29 29 33 / 94%);
     border-color: rgb(255 255 255 / 82%);
-    background:
-      linear-gradient(145deg, rgb(255 255 255 / 78%), transparent 47%), rgb(236 236 240 / 84%);
+    background: var(--companion-surface-card);
     box-shadow:
       0 22px 52px rgb(36 36 49 / 20%),
       0 5px 14px rgb(36 36 49 / 12%),
