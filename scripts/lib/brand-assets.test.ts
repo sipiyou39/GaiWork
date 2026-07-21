@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -104,8 +105,12 @@ describe("brand-assets", () => {
   effectIt.effect("keeps the shared Doudou Code icon family valid and synchronized", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceRoot = yield* path.fromFileUrl(new URL("../../", import.meta.url));
       const read = (relativePath: string) =>
-        fileSystem.readFile(relativePath).pipe(Effect.map((contents) => Buffer.from(contents)));
+        fileSystem
+          .readFile(path.resolve(workspaceRoot, relativePath))
+          .pipe(Effect.map((contents) => Buffer.from(contents)));
       const contents = yield* read(BRAND_ASSET_PATHS.doudouCodeMacIconPng);
       const icon = PNG.sync.read(contents);
       const alphaAt = (x: number, y: number) => icon.data[(y * icon.width + x) * 4 + 3];
