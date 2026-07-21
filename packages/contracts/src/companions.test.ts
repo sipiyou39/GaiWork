@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   CompanionPointerEvent,
   CompanionProjectionSnapshot,
+  DesktopCompanionOverlayPresentation,
   DesktopCompanionPortalMetricsInput,
   DesktopCompanionPortalRequest,
 } from "./companions.ts";
@@ -11,6 +12,7 @@ import {
 describe("companion IPC contracts", () => {
   const decodeSnapshot = Schema.decodeUnknownSync(CompanionProjectionSnapshot);
   const decodePointerEvent = Schema.decodeUnknownSync(CompanionPointerEvent);
+  const decodeOverlayPresentation = Schema.decodeUnknownSync(DesktopCompanionOverlayPresentation);
   const decodePortalRequest = Schema.decodeUnknownSync(DesktopCompanionPortalRequest);
   const decodePortalMetrics = Schema.decodeUnknownSync(DesktopCompanionPortalMetricsInput);
 
@@ -92,6 +94,34 @@ describe("companion IPC contracts", () => {
         screenY: 20,
       }),
     ).toThrow();
+  });
+
+  it("accepts the global desktop visibility control as a pointer surface", () => {
+    expect(
+      decodePointerEvent({
+        phase: "up",
+        target: "visibility-control",
+        presentationIndex: 0,
+        screenX: 20,
+        screenY: 20,
+      }).target,
+    ).toBe("visibility-control");
+  });
+
+  it("carries global visibility state without exposing a conversation identity", () => {
+    expect(
+      decodeOverlayPresentation({
+        displayId: "display-test",
+        companionsVisible: false,
+        visibilityControl: { x: 18, y: 742, size: 40 },
+        companions: [],
+      }),
+    ).toEqual({
+      displayId: "display-test",
+      companionsVisible: false,
+      visibilityControl: { x: 18, y: 742, size: 40 },
+      companions: [],
+    });
   });
 
   it("accepts only bounded, revisioned desktop composer portal requests", () => {

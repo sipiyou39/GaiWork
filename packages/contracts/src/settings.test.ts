@@ -37,6 +37,7 @@ describe("ClientSettings companions", () => {
 
     expect(settings.companionAssignments).toEqual([]);
     expect(settings.companionDesktopEnabled).toBe(true);
+    expect(settings.companionDesktopCompletionSoundEnabled).toBe(true);
     expect(settings.companionDesktopExpandedView).toBe("response-and-composer");
     expect(settings.companionDesktopPreviewsEnabled).toBe(true);
     expect(settings.companionDesktopScalePercent).toBe(100);

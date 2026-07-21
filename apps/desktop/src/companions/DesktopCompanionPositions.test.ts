@@ -4,6 +4,7 @@ import {
   boundsFromPosition,
   constrainCompanionBounds,
   defaultCompanionBounds,
+  defaultCompanionVisibilityControlBounds,
   positionFromBounds,
 } from "./DesktopCompanionPositions.ts";
 
@@ -28,5 +29,14 @@ describe("desktop companion positions", () => {
     const second = defaultCompanionBounds({ index: 1, workArea, width: 192, height: 208 });
     assert.isAbove(first.x, second.x);
     assert.strictEqual(first.y, second.y);
+  });
+
+  it("places the visibility control independently in the bottom-left corner", () => {
+    assert.deepEqual(defaultCompanionVisibilityControlBounds({ workArea, size: 40 }), {
+      x: -1902,
+      y: 1022,
+      width: 40,
+      height: 40,
+    });
   });
 });

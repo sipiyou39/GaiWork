@@ -16,6 +16,7 @@ const clientSettings: ClientSettings = {
   autoOpenPlanSidebar: false,
   companionAssignments: [],
   companionDesktopEnabled: true,
+  companionDesktopCompletionSoundEnabled: false,
   companionDesktopExpandedView: "response-and-composer",
   companionDesktopPreviewsEnabled: true,
   companionDesktopScalePercent: 125,

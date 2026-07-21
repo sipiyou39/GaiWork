@@ -12,6 +12,11 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
+export const DESKTOP_COMPANION_VISIBILITY_CONTROL_POSITION_KEY = "visibility-control" as const;
+export type DesktopCompanionPositionKey =
+  | CompanionIdType
+  | typeof DESKTOP_COMPANION_VISIBILITY_CONTROL_POSITION_KEY;
+
 export interface Rectangle {
   readonly x: number;
   readonly y: number;
@@ -39,7 +44,10 @@ const DesktopCompanionPositionsJson = fromLenientJson(DesktopCompanionPositionsD
 const decodePositionsJson = Schema.decodeEffect(DesktopCompanionPositionsJson);
 const encodePositionsJson = Schema.encodeEffect(DesktopCompanionPositionsJson);
 
-const knownCompanionIds = new Set<string>(COMPANION_IDS);
+const knownPositionKeys = new Set<string>([
+  ...COMPANION_IDS,
+  DESKTOP_COMPANION_VISIBILITY_CONTROL_POSITION_KEY,
+]);
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -125,6 +133,23 @@ export function defaultCompanionBounds(input: {
   );
 }
 
+export function defaultCompanionVisibilityControlBounds(input: {
+  readonly workArea: Rectangle;
+  readonly size: number;
+  readonly margin?: number;
+}): Rectangle {
+  const margin = input.margin ?? 18;
+  return constrainCompanionBounds(
+    {
+      x: input.workArea.x + margin,
+      y: input.workArea.y + input.workArea.height - margin - input.size,
+      width: input.size,
+      height: input.size,
+    },
+    input.workArea,
+  );
+}
+
 function normalizePosition(value: DesktopCompanionPosition): DesktopCompanionPosition {
   return {
     displayId: value.displayId,
@@ -138,9 +163,11 @@ type PositionMap = Readonly<Record<string, DesktopCompanionPosition>>;
 export class DesktopCompanionPositions extends Context.Service<
   DesktopCompanionPositions,
   {
-    readonly get: (companionId: CompanionIdType) => Effect.Effect<DesktopCompanionPosition | null>;
+    readonly get: (
+      key: DesktopCompanionPositionKey,
+    ) => Effect.Effect<DesktopCompanionPosition | null>;
     readonly set: (
-      companionId: CompanionIdType,
+      key: DesktopCompanionPositionKey,
       position: DesktopCompanionPosition,
     ) => Effect.Effect<void>;
     readonly reset: Effect.Effect<void>;
@@ -172,7 +199,7 @@ export const make = Effect.gen(function* () {
               Effect.map((document) =>
                 Object.fromEntries(
                   Object.entries(document.positions).flatMap(([id, position]) =>
-                    knownCompanionIds.has(id) ? [[id, normalizePosition(position)] as const] : [],
+                    knownPositionKeys.has(id) ? [[id, normalizePosition(position)] as const] : [],
                   ),
                 ),
               ),
@@ -206,15 +233,13 @@ export const make = Effect.gen(function* () {
     );
 
   return DesktopCompanionPositions.of({
-    get: (companionId) =>
-      SynchronizedRef.get(positionsRef).pipe(
-        Effect.map((positions) => positions[companionId] ?? null),
-      ),
-    set: (companionId, position) =>
+    get: (key) =>
+      SynchronizedRef.get(positionsRef).pipe(Effect.map((positions) => positions[key] ?? null)),
+    set: (key, position) =>
       SynchronizedRef.modifyEffect(positionsRef, (positions) => {
         const next = {
           ...positions,
-          [companionId]: normalizePosition(position),
+          [key]: normalizePosition(position),
         };
         return persist(next).pipe(Effect.as([undefined, next] as const));
       }),

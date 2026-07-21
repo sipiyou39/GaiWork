@@ -54,6 +54,9 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   companionDesktopEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  companionDesktopCompletionSoundEnabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   companionDesktopExpandedView: CompanionDesktopExpandedView.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPANION_DESKTOP_EXPANDED_VIEW)),
   ),
@@ -565,6 +568,7 @@ export const ClientSettingsPatch = Schema.Struct({
   autoOpenPlanSidebar: Schema.optionalKey(Schema.Boolean),
   companionAssignments: Schema.optionalKey(Schema.Array(CompanionAssignment)),
   companionDesktopEnabled: Schema.optionalKey(Schema.Boolean),
+  companionDesktopCompletionSoundEnabled: Schema.optionalKey(Schema.Boolean),
   companionDesktopExpandedView: Schema.optionalKey(CompanionDesktopExpandedView),
   companionDesktopPreviewsEnabled: Schema.optionalKey(Schema.Boolean),
   companionDesktopScalePercent: Schema.optionalKey(CompanionDesktopScalePercent),

@@ -6,6 +6,7 @@ import {
   acceptCompanionSnapshot,
   companionOverlayBounds,
   desktopCompanionPresentation,
+  desktopCompanionVisibilityControlPresentation,
 } from "./DesktopCompanionManager.ts";
 
 describe("companion projection revisions", () => {
@@ -74,6 +75,16 @@ describe("isolated companion presentation", () => {
         { x: 0, y: 24, width: 1200, height: 800 },
       ),
       { x: 0, y: 24, width: 1200, height: 800 },
+    );
+  });
+
+  it("projects the global visibility control into an offset display", () => {
+    assert.deepEqual(
+      desktopCompanionVisibilityControlPresentation({
+        bounds: { x: -1_902, y: 1_022, width: 40, height: 40 },
+        overlayBounds: { x: -1_920, y: 24, width: 1_920, height: 1_056 },
+      }),
+      { x: 18, y: 998, size: 40 },
     );
   });
 

@@ -28,6 +28,7 @@ for (const requiredPath of [
   NodePath.resolve(desktopDir, "dist-electron/companion-preload.cjs"),
   ...companionRuntimeRoots.flatMap((runtimeRoot) => [
     NodePath.resolve(runtimeRoot, "companion.html"),
+    NodePath.resolve(runtimeRoot, "companions/sounds/completion.mp3"),
     ...companionIds.flatMap((companionId) => [
       NodePath.resolve(runtimeRoot, `companions/${companionId}/manifest.json`),
       NodePath.resolve(runtimeRoot, `companions/${companionId}/spritesheet.webp`),

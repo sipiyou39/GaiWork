@@ -14,6 +14,7 @@ import {
   type DesktopCompanionPortalLayout,
   type DesktopCompanionPortalSurface,
   type DesktopCompanionPresentation,
+  type DesktopCompanionVisibilityControlPresentation,
   type MainWindowAttentionState as MainWindowAttentionStateType,
 } from "@t3tools/contracts";
 import { companionDisplayDimensions } from "@t3tools/client-runtime/companions";
@@ -35,10 +36,12 @@ import { getDesktopUrl } from "../electron/ElectronProtocol.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import {
+  DESKTOP_COMPANION_VISIBILITY_CONTROL_POSITION_KEY,
   DesktopCompanionPositions,
   boundsFromPosition,
   constrainCompanionBounds,
   defaultCompanionBounds,
+  defaultCompanionVisibilityControlBounds,
   positionFromBounds,
   type Rectangle,
 } from "./DesktopCompanionPositions.ts";
@@ -66,6 +69,7 @@ import {
 
 const DRAG_THRESHOLD = 6;
 const MIN_MOVE_INTERVAL_MS = 1_000 / 60;
+const VISIBILITY_CONTROL_SIZE = 40;
 const decodeCompanionProjectionSnapshot = Schema.decodeUnknownEffect(CompanionProjectionSnapshot);
 const decodeCompanionPointerEvent = Schema.decodeUnknownEffect(CompanionPointerEvent);
 const decodeInteractive = Schema.decodeUnknownEffect(Schema.Boolean);
@@ -95,22 +99,34 @@ interface DragState {
   lastMoveAt: number;
 }
 
+interface VisibilityControlDragState {
+  readonly pointerX: number;
+  readonly pointerY: number;
+  readonly controlX: number;
+  readonly controlY: number;
+  dragging: boolean;
+  lastMoveAt: number;
+}
+
 interface OverlayWindowEntry {
   readonly window: Electron.BrowserWindow;
   readonly displayId: string;
   workArea: Electron.Rectangle;
   overlayBounds: Electron.Rectangle;
   layouts: CompanionLayout[];
+  visibilityControlBounds: Rectangle | null;
   drag: DragState | null;
+  visibilityControlDrag: VisibilityControlDragState | null;
   press: {
-    readonly companionId: CompanionId;
+    readonly companionId: CompanionId | null;
     readonly target: CompanionPointerEvent["target"];
   } | null;
 }
 
 interface OverlayGroup {
   readonly display: Electron.Display;
-  readonly layouts: CompanionLayout[];
+  layouts: CompanionLayout[];
+  visibilityControlBounds: Rectangle | null;
 }
 
 interface AcceptedSnapshot {
@@ -257,6 +273,17 @@ export function companionOverlayBounds(
   return { ...workArea };
 }
 
+export function desktopCompanionVisibilityControlPresentation(input: {
+  readonly bounds: Rectangle;
+  readonly overlayBounds: Rectangle;
+}): DesktopCompanionVisibilityControlPresentation {
+  return {
+    x: Math.max(0, Math.round(input.bounds.x - input.overlayBounds.x)),
+    y: Math.max(0, Math.round(input.bounds.y - input.overlayBounds.y)),
+    size: input.bounds.width,
+  };
+}
+
 function rectanglesEqual(left: Rectangle, right: Rectangle): boolean {
   return (
     left.x === right.x &&
@@ -297,11 +324,16 @@ export const make = Effect.gen(function* () {
     CompanionId,
     { readonly displayId: string; readonly bounds: Rectangle }
   >();
+  let inFlightVisibilityControl: {
+    readonly displayId: string;
+    readonly bounds: Rectangle;
+  } | null = null;
   const previewSessions = new Map<CompanionId, PreviewSessionState>();
   let desiredProjections = new Map<CompanionId, CompanionProjection>();
   let desktopScalePercent = DEFAULT_COMPANION_DESKTOP_SCALE_PERCENT;
   let desktopPreviewsEnabled = true;
   let desktopExpandedView = DEFAULT_COMPANION_DESKTOP_EXPANDED_VIEW;
+  let companionsVisible = true;
   let desiredDisplayIds = new Set<string>();
   let acceptedSnapshot: AcceptedSnapshot | null = null;
   let reconciliationFiber: Fiber.Fiber<void, never> | null = null;
@@ -350,6 +382,14 @@ export const make = Effect.gen(function* () {
     entry: OverlayWindowEntry,
   ): DesktopCompanionOverlayPresentation => ({
     displayId: entry.displayId,
+    companionsVisible,
+    visibilityControl:
+      entry.visibilityControlBounds === null
+        ? null
+        : desktopCompanionVisibilityControlPresentation({
+            bounds: entry.visibilityControlBounds,
+            overlayBounds: entry.overlayBounds,
+          }),
     companions: entry.layouts.map((layout) =>
       desktopCompanionPresentation({
         projection: layout.projection,
@@ -501,7 +541,7 @@ export const make = Effect.gen(function* () {
     const groups = new Map<string, OverlayGroup>();
     if (desiredProjections.size === 0) return groups;
     for (const display of Electron.screen.getAllDisplays()) {
-      groups.set(String(display.id), { display, layouts: [] });
+      groups.set(String(display.id), { display, layouts: [], visibilityControlBounds: null });
     }
     const defaultIndexByDisplay = new Map<string, number>();
     const dimensions = companionDisplayDimensions(desktopScalePercent);
@@ -533,7 +573,11 @@ export const make = Effect.gen(function* () {
               width: dimensions.width,
               height: dimensions.height,
             });
-      const group = groups.get(displayId) ?? { display, layouts: [] };
+      const group = groups.get(displayId) ?? {
+        display,
+        layouts: [],
+        visibilityControlBounds: null,
+      };
       group.layouts.push({
         projection,
         bounds: constrainCompanionBounds(bounds, display.workArea),
@@ -541,6 +585,42 @@ export const make = Effect.gen(function* () {
       });
       groups.set(displayId, group);
     }
+
+    const savedVisibilityControl = inFlightVisibilityControl
+      ? null
+      : yield* positions.get(DESKTOP_COMPANION_VISIBILITY_CONTROL_POSITION_KEY);
+    const visibilityControlDisplay = inFlightVisibilityControl
+      ? resolveDisplay(inFlightVisibilityControl.displayId)
+      : resolveDisplay(savedVisibilityControl?.displayId ?? null);
+    const visibilityControlBounds = inFlightVisibilityControl
+      ? {
+          ...inFlightVisibilityControl.bounds,
+          width: VISIBILITY_CONTROL_SIZE,
+          height: VISIBILITY_CONTROL_SIZE,
+        }
+      : savedVisibilityControl
+        ? boundsFromPosition({
+            position: savedVisibilityControl,
+            workArea: visibilityControlDisplay.workArea,
+            width: VISIBILITY_CONTROL_SIZE,
+            height: VISIBILITY_CONTROL_SIZE,
+          })
+        : defaultCompanionVisibilityControlBounds({
+            workArea: visibilityControlDisplay.workArea,
+            size: VISIBILITY_CONTROL_SIZE,
+          });
+    const visibilityControlDisplayId = String(visibilityControlDisplay.id);
+    const visibilityControlGroup = groups.get(visibilityControlDisplayId) ?? {
+      display: visibilityControlDisplay,
+      layouts: [],
+      visibilityControlBounds: null,
+    };
+    visibilityControlGroup.visibilityControlBounds = constrainCompanionBounds(
+      visibilityControlBounds,
+      visibilityControlDisplay.workArea,
+    );
+    groups.set(visibilityControlDisplayId, visibilityControlGroup);
+
     for (const group of groups.values()) {
       applyPreviewGeometry({ workArea: group.display.workArea, layouts: group.layouts });
     }
@@ -586,7 +666,9 @@ export const make = Effect.gen(function* () {
       workArea: group.display.workArea,
       overlayBounds,
       layouts: group.layouts,
+      visibilityControlBounds: group.visibilityControlBounds,
       drag: null,
+      visibilityControlDrag: null,
       press: null,
     };
     const webContentsId = window.webContents.id;
@@ -657,6 +739,7 @@ export const make = Effect.gen(function* () {
       }
       entry.workArea = group.display.workArea;
       entry.layouts = group.layouts;
+      entry.visibilityControlBounds = group.visibilityControlBounds;
       if (
         entry.drag &&
         !group.layouts.some((layout) => layout.projection.companionId === entry.drag?.companionId)
@@ -665,9 +748,13 @@ export const make = Effect.gen(function* () {
       }
       if (
         entry.press &&
+        entry.press.target !== "visibility-control" &&
         !group.layouts.some((layout) => layout.projection.companionId === entry.press?.companionId)
       ) {
         entry.press = null;
+      }
+      if (entry.visibilityControlDrag && group.visibilityControlBounds === null) {
+        entry.visibilityControlDrag = null;
       }
       if (!entry.window.isDestroyed()) {
         const nextOverlayBounds = companionOverlayBounds(group.layouts, group.display.workArea);
@@ -746,6 +833,18 @@ export const make = Effect.gen(function* () {
     return null;
   };
 
+  const findVisibilityControl = (): {
+    readonly entry: OverlayWindowEntry;
+    readonly bounds: Rectangle;
+  } | null => {
+    for (const entry of overlays.values()) {
+      if (entry.visibilityControlBounds) {
+        return { entry, bounds: entry.visibilityControlBounds };
+      }
+    }
+    return null;
+  };
+
   const pointerTargetBounds = (
     layout: CompanionLayout,
     target: CompanionPointerEvent["target"],
@@ -780,6 +879,25 @@ export const make = Effect.gen(function* () {
   const reflowEntry = (entry: OverlayWindowEntry): void => {
     applyPreviewGeometry({ workArea: entry.workArea, layouts: entry.layouts });
     sendOverlayPresentation(entry);
+  };
+
+  const moveVisibilityControlToDisplay = (
+    located: { readonly entry: OverlayWindowEntry; readonly bounds: Rectangle },
+    display: Electron.Display,
+    nextBounds: Rectangle,
+  ): { readonly entry: OverlayWindowEntry; readonly bounds: Rectangle } => {
+    const nextEntry = overlays.get(String(display.id)) ?? located.entry;
+    const constrained = constrainCompanionBounds(nextBounds, display.workArea);
+    if (nextEntry === located.entry) {
+      located.entry.visibilityControlBounds = constrained;
+      sendOverlayPresentation(located.entry);
+      return { entry: located.entry, bounds: constrained };
+    }
+    located.entry.visibilityControlBounds = null;
+    nextEntry.visibilityControlBounds = constrained;
+    sendOverlayPresentation(located.entry);
+    sendOverlayPresentation(nextEntry);
+    return { entry: nextEntry, bounds: constrained };
   };
 
   const moveLayoutToDisplay = (
@@ -1122,6 +1240,39 @@ export const make = Effect.gen(function* () {
     const entry = entryForSender(senderWebContentsId);
     if (!entry || entry.window.isDestroyed()) return;
     if (pointerEvent.phase === "down") {
+      if (pointerEvent.target === "visibility-control") {
+        const controlBounds = entry.visibilityControlBounds;
+        if (
+          controlBounds === null ||
+          !rectangleContainsPoint(controlBounds, {
+            x: pointerEvent.screenX,
+            y: pointerEvent.screenY,
+          })
+        ) {
+          yield* logWarning("rejected visibility control pointer outside its presentation bounds", {
+            senderWebContentsId,
+          });
+          return;
+        }
+        entry.press = { companionId: null, target: "visibility-control" };
+        entry.drag = null;
+        entry.visibilityControlDrag = {
+          pointerX: pointerEvent.screenX,
+          pointerY: pointerEvent.screenY,
+          controlX: controlBounds.x,
+          controlY: controlBounds.y,
+          dragging: false,
+          lastMoveAt: 0,
+        };
+        return;
+      }
+      if (!companionsVisible) {
+        yield* logWarning("rejected hidden companion pointer target", {
+          senderWebContentsId,
+          target: pointerEvent.target,
+        });
+        return;
+      }
       const layout = entry.layouts[pointerEvent.presentationIndex];
       const targetBounds = layout ? pointerTargetBounds(layout, pointerEvent.target) : null;
       if (
@@ -1143,6 +1294,7 @@ export const make = Effect.gen(function* () {
         companionId: layout.projection.companionId,
         target: pointerEvent.target,
       };
+      entry.visibilityControlDrag = null;
       if (pointerEvent.target !== "companion") {
         entry.drag = null;
         return;
@@ -1162,16 +1314,114 @@ export const make = Effect.gen(function* () {
     if (pointerEvent.phase === "cancel") {
       entry.press = null;
       const cancelledDrag = entry.drag;
+      const cancelledVisibilityControlDrag = entry.visibilityControlDrag;
       if (cancelledDrag) inFlightPositions.delete(cancelledDrag.companionId);
       entry.drag = null;
-      if (cancelledDrag?.dragging) yield* reconcileOverlays;
+      entry.visibilityControlDrag = null;
+      if (cancelledVisibilityControlDrag) inFlightVisibilityControl = null;
+      if (cancelledDrag?.dragging || cancelledVisibilityControlDrag?.dragging) {
+        yield* reconcileOverlays;
+      }
       return;
     }
 
     const press = entry.press;
+    const visibilityControlDrag = entry.visibilityControlDrag;
+    if (press?.target === "visibility-control" && visibilityControlDrag) {
+      let located = findVisibilityControl();
+      if (!located) {
+        entry.press = null;
+        entry.visibilityControlDrag = null;
+        inFlightVisibilityControl = null;
+        return;
+      }
+      const deltaX = pointerEvent.screenX - visibilityControlDrag.pointerX;
+      const deltaY = pointerEvent.screenY - visibilityControlDrag.pointerY;
+      if (pointerEvent.phase === "move") {
+        if (!visibilityControlDrag.dragging && Math.hypot(deltaX, deltaY) >= DRAG_THRESHOLD) {
+          visibilityControlDrag.dragging = true;
+        }
+        const now = performance.now();
+        if (
+          !visibilityControlDrag.dragging ||
+          now - visibilityControlDrag.lastMoveAt < MIN_MOVE_INTERVAL_MS
+        ) {
+          return;
+        }
+        visibilityControlDrag.lastMoveAt = now;
+        const display = Electron.screen.getDisplayNearestPoint({
+          x: pointerEvent.screenX,
+          y: pointerEvent.screenY,
+        });
+        located = moveVisibilityControlToDisplay(located, display, {
+          ...located.bounds,
+          x: Math.round(visibilityControlDrag.controlX + deltaX),
+          y: Math.round(visibilityControlDrag.controlY + deltaY),
+        });
+        inFlightVisibilityControl = {
+          displayId: located.entry.displayId,
+          bounds: located.bounds,
+        };
+        return;
+      }
+
+      if (!visibilityControlDrag.dragging && Math.hypot(deltaX, deltaY) >= DRAG_THRESHOLD) {
+        visibilityControlDrag.dragging = true;
+      }
+      if (visibilityControlDrag.dragging) {
+        const display = Electron.screen.getDisplayNearestPoint({
+          x: pointerEvent.screenX,
+          y: pointerEvent.screenY,
+        });
+        located = moveVisibilityControlToDisplay(located, display, {
+          ...located.bounds,
+          x: Math.round(visibilityControlDrag.controlX + deltaX),
+          y: Math.round(visibilityControlDrag.controlY + deltaY),
+        });
+      }
+      entry.press = null;
+      entry.visibilityControlDrag = null;
+      if (visibilityControlDrag.dragging) {
+        const display = Electron.screen.getDisplayMatching(located.bounds as Electron.Rectangle);
+        const constrained = constrainCompanionBounds(located.bounds, display.workArea);
+        located.entry.visibilityControlBounds = constrained;
+        yield* positions.set(
+          DESKTOP_COMPANION_VISIBILITY_CONTROL_POSITION_KEY,
+          positionFromBounds({
+            displayId: String(display.id),
+            bounds: constrained,
+            workArea: display.workArea,
+          }),
+        );
+        inFlightVisibilityControl = null;
+        yield* reconcileOverlays;
+        return;
+      }
+      inFlightVisibilityControl = null;
+      if (
+        pointerEvent.phase === "up" &&
+        pointerEvent.target === "visibility-control" &&
+        rectangleContainsPoint(located.bounds, {
+          x: pointerEvent.screenX,
+          y: pointerEvent.screenY,
+        })
+      ) {
+        companionsVisible = !companionsVisible;
+        if (!companionsVisible) closeActivePortal();
+        for (const overlayEntry of overlays.values()) sendOverlayPresentation(overlayEntry);
+      }
+      return;
+    }
+
+    if (!companionsVisible) {
+      entry.press = null;
+      entry.drag = null;
+      return;
+    }
     if (press && press.target !== "companion") {
       if (pointerEvent.phase !== "up") return;
       entry.press = null;
+      if (press.companionId === null) return;
       const located = findDraggedLayout(press.companionId);
       const layout = located?.layout ?? null;
       const targetBounds = layout ? pointerTargetBounds(layout, press.target) : null;
@@ -1331,6 +1581,7 @@ export const make = Effect.gen(function* () {
     yield* positions.reset;
     closeActivePortal();
     inFlightPositions.clear();
+    inFlightVisibilityControl = null;
     previewSessions.clear();
     yield* cancelScheduledReconciliation;
     yield* reconcileOverlays;
@@ -1355,6 +1606,7 @@ export const make = Effect.gen(function* () {
     desiredProjections = new Map();
     desiredDisplayIds = new Set();
     inFlightPositions.clear();
+    inFlightVisibilityControl = null;
     if (reconciliationFiber) runFork(Fiber.interrupt(reconciliationFiber));
     reconciliationFiber = null;
     for (const entry of overlays.values()) {

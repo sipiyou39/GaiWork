@@ -164,8 +164,19 @@ export const DesktopCompanionPresentation = Schema.Struct({
 });
 export type DesktopCompanionPresentation = typeof DesktopCompanionPresentation.Type;
 
+/** Global desktop control that remains available while companions are hidden. */
+export const DesktopCompanionVisibilityControlPresentation = Schema.Struct({
+  x: NonNegativeInt,
+  y: NonNegativeInt,
+  size: Schema.Int.check(Schema.isBetween({ minimum: 28, maximum: 96 })),
+});
+export type DesktopCompanionVisibilityControlPresentation =
+  typeof DesktopCompanionVisibilityControlPresentation.Type;
+
 export const DesktopCompanionOverlayPresentation = Schema.Struct({
   displayId: TrimmedNonEmptyString,
+  companionsVisible: Schema.Boolean,
+  visibilityControl: Schema.NullOr(DesktopCompanionVisibilityControlPresentation),
   companions: Schema.Array(DesktopCompanionPresentation).check(
     Schema.isMaxLength(COMPANION_IDS.length),
   ),
@@ -195,7 +206,7 @@ export type MainWindowAttentionState = typeof MainWindowAttentionState.Type;
 
 export const CompanionPointerEvent = Schema.Struct({
   phase: Schema.Literals(["down", "move", "up", "cancel"]),
-  target: Schema.Literals(["companion", "preview", "toggle", "composer"]),
+  target: Schema.Literals(["companion", "preview", "toggle", "composer", "visibility-control"]),
   presentationIndex: NonNegativeInt,
   screenX: Schema.Finite,
   screenY: Schema.Finite,

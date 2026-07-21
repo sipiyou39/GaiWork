@@ -48,7 +48,7 @@ interface SpriteState {
 }
 
 interface PointerHit {
-  readonly companionId: CompanionId;
+  readonly companionId: CompanionId | null;
   readonly presentationIndex: number;
   readonly target: CompanionPointerEvent["target"];
 }
@@ -63,10 +63,48 @@ const overlay = overlayElement;
 const sprites = new Map<CompanionId, SpriteState>();
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+function makeVisibilityControlIcon(): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.classList.add("companion-visibility-control-icon");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  for (const [cx, cy] of [
+    [11, 4],
+    [18, 8],
+    [20, 16],
+  ] as const) {
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", String(cx));
+    circle.setAttribute("cy", String(cy));
+    circle.setAttribute("r", "2");
+    svg.append(circle);
+  }
+  const paw = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  paw.setAttribute(
+    "d",
+    "M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z",
+  );
+  svg.append(paw);
+  const slash = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  slash.classList.add("companion-visibility-control-slash");
+  slash.setAttribute("d", "M4 4 20 20");
+  svg.append(slash);
+  return svg;
+}
+
+const visibilityControl = document.createElement("button");
+visibilityControl.type = "button";
+visibilityControl.className = "companion-visibility-control";
+visibilityControl.tabIndex = -1;
+visibilityControl.hidden = true;
+visibilityControl.append(makeVisibilityControlIcon());
+overlay.append(visibilityControl);
+
 let presentation: DesktopCompanionOverlayPresentation | null = null;
 let presentationOrder: CompanionId[] = [];
 let hoveredId: CompanionId | null = null;
 let pressedId: CompanionId | null = null;
+let pointerPressActive = false;
 let pressedTarget: CompanionPointerEvent["target"] = "companion";
 let pressedPresentationIndex = 0;
 let pressedPointerId: number | null = null;
@@ -367,6 +405,37 @@ function removeSprite(companionId: CompanionId, sprite: SpriteState): void {
 
 function updatePresentation(nextPresentation: DesktopCompanionOverlayPresentation): void {
   presentation = nextPresentation;
+  const control = nextPresentation.visibilityControl;
+  visibilityControl.hidden = control === null;
+  if (control !== null) {
+    visibilityControl.style.left = `${control.x}px`;
+    visibilityControl.style.top = `${control.y}px`;
+    visibilityControl.style.width = `${control.size}px`;
+    visibilityControl.style.height = `${control.size}px`;
+  }
+  visibilityControl.classList.toggle("is-hiding-companions", !nextPresentation.companionsVisible);
+  visibilityControl.setAttribute("aria-pressed", String(nextPresentation.companionsVisible));
+  visibilityControl.setAttribute(
+    "aria-label",
+    nextPresentation.companionsVisible
+      ? "Hide all desktop companions"
+      : "Show all desktop companions",
+  );
+  visibilityControl.title = nextPresentation.companionsVisible
+    ? "Hide companions"
+    : "Show companions";
+  overlay.classList.toggle("companions-are-hidden", !nextPresentation.companionsVisible);
+  if (!nextPresentation.companionsVisible) hoveredId = null;
+  if (
+    control === null &&
+    pointerPressActive &&
+    pressedTarget === "visibility-control" &&
+    !dragging
+  ) {
+    pointerPressActive = false;
+    pressedPointerId = null;
+    setMouseEventsEnabled(false);
+  }
   presentationOrder = nextPresentation.companions.map((companion) => companion.companionId);
   const nextIds = new Set(presentationOrder);
   for (const [companionId, sprite] of sprites) {
@@ -377,6 +446,7 @@ function updatePresentation(nextPresentation: DesktopCompanionOverlayPresentatio
         overlay.releasePointerCapture(pressedPointerId);
       }
       pressedId = null;
+      pointerPressActive = false;
       pressedPointerId = null;
       dragging = false;
       setMouseEventsEnabled(false);
@@ -443,6 +513,7 @@ function drawAlphaMask(
 
 function render(now: number): void {
   let nextRenderInMs = Number.POSITIVE_INFINITY;
+  const companionsVisible = presentation?.companionsVisible !== false;
   for (const companionId of presentationOrder) {
     const sprite = sprites.get(companionId);
     if (!sprite) continue;
@@ -460,21 +531,27 @@ function render(now: number): void {
       sprite.lastRenderedFrame = frame;
       drawAlphaMask(sprite, animation, frame);
     }
-    const animationDelay = companionTimeUntilNextFrame(animation, now - sprite.animationStartedAt, {
-      ...(animation === "jumping" ? { repeatDelayMs: COMPANION_JUMP_REPEAT_DELAY_MS } : {}),
-      reducedMotion: reducedMotion.matches,
-    });
-    nextRenderInMs = Math.min(nextRenderInMs, animationDelay);
-    if (animation === "waving") {
-      nextRenderInMs = Math.min(
-        nextRenderInMs,
-        Math.max(1, companionAnimationDuration("waving") - (now - sprite.mountedAt)),
+    if (companionsVisible) {
+      const animationDelay = companionTimeUntilNextFrame(
+        animation,
+        now - sprite.animationStartedAt,
+        {
+          ...(animation === "jumping" ? { repeatDelayMs: COMPANION_JUMP_REPEAT_DELAY_MS } : {}),
+          reducedMotion: reducedMotion.matches,
+        },
       );
+      nextRenderInMs = Math.min(nextRenderInMs, animationDelay);
+      if (animation === "waving") {
+        nextRenderInMs = Math.min(
+          nextRenderInMs,
+          Math.max(1, companionAnimationDuration("waving") - (now - sprite.mountedAt)),
+        );
+      }
     }
   }
   if (
     !readySent &&
-    presentationOrder.length > 0 &&
+    (presentationOrder.length > 0 || presentation?.visibilityControl !== null) &&
     presentationOrder.every((companionId) => {
       const sprite = sprites.get(companionId);
       return sprite?.spriteReady === true && sprite.lastRenderedFrame >= 0;
@@ -483,7 +560,7 @@ function render(now: number): void {
     readySent = true;
     bridge.notifyReady();
   }
-  if (pressedId === null && lastPointerClientX !== null && lastPointerClientY !== null) {
+  if (!pointerPressActive && lastPointerClientX !== null && lastPointerClientY !== null) {
     setMouseEventsEnabled(hitTest(lastPointerClientX, lastPointerClientY) !== null);
   }
   if (Number.isFinite(nextRenderInMs)) scheduleRender(nextRenderInMs);
@@ -502,6 +579,11 @@ function pointInside(
 
 function hitTest(clientX: number, clientY: number): PointerHit | null {
   if (!presentation) return null;
+  const control = presentation.visibilityControl;
+  if (control && pointInside(clientX, clientY, control.x, control.y, control.size, control.size)) {
+    return { companionId: null, presentationIndex: 0, target: "visibility-control" };
+  }
+  if (!presentation.companionsVisible) return null;
   for (let index = presentation.companions.length - 1; index >= 0; index -= 1) {
     const companion = presentation.companions[index];
     if (!companion) continue;
@@ -582,7 +664,7 @@ function hitTest(clientX: number, clientY: number): PointerHit | null {
 function syncHoverAtPointer(clientX: number, clientY: number): boolean {
   lastPointerClientX = clientX;
   lastPointerClientY = clientY;
-  if (pressedId) return false;
+  if (pointerPressActive) return false;
   const hit = hitTest(clientX, clientY);
   const nextHoveredId = hit?.target === "companion" ? hit.companionId : null;
   const changed = hoveredId !== nextHoveredId;
@@ -618,7 +700,7 @@ function schedulePointerMove(event: PointerEvent): void {
     pointerMoveTimer = null;
     const next = pendingPointerMove;
     pendingPointerMove = null;
-    if (!next || pressedId === null) return;
+    if (!next || !pointerPressActive) return;
     lastPointerMoveSentAt = performance.now();
     void bridge.sendPointerEvent(next);
   }, Math.ceil(delay));
@@ -636,17 +718,20 @@ document.addEventListener("pointermove", (event) => {
   const previousDragDirection = dragDirection;
   const wasDragging = dragging;
   const hoverChanged = syncHoverAtPointer(event.clientX, event.clientY);
-  if (pressedId) setMouseEventsEnabled(true);
-  if (!pressedId) {
+  if (pointerPressActive) setMouseEventsEnabled(true);
+  if (!pointerPressActive) {
     if (hoverChanged) scheduleRender();
     return;
   }
-  if (pressedTarget !== "companion") return;
+  if (pressedTarget !== "companion" && pressedTarget !== "visibility-control") return;
   if (
     !dragging &&
     Math.hypot(event.screenX - pointerDownScreenX, event.screenY - pointerDownScreenY) >= 6
   ) {
     dragging = true;
+    if (pressedTarget === "visibility-control") {
+      visibilityControl.classList.add("is-dragging");
+    }
   }
   if (dragging && event.screenX !== lastPointerScreenX) {
     dragDirection = event.screenX < lastPointerScreenX ? "running-left" : "running-right";
@@ -661,6 +746,7 @@ document.addEventListener("pointerdown", (event) => {
   if (!hit) return;
   event.preventDefault();
   pressedId = hit.companionId;
+  pointerPressActive = true;
   pressedTarget = hit.target;
   pressedPresentationIndex = hit.presentationIndex;
   pressedPointerId = event.pointerId;
@@ -679,11 +765,13 @@ document.addEventListener("pointerdown", (event) => {
 });
 
 document.addEventListener("pointerup", (event) => {
-  if (!pressedId) return;
+  if (!pointerPressActive) return;
   event.preventDefault();
   sendTerminalPointerEvent("up", event);
   pressedId = null;
+  pointerPressActive = false;
   dragging = false;
+  visibilityControl.classList.remove("is-dragging");
   if (pressedPointerId !== null && overlay.hasPointerCapture(pressedPointerId)) {
     overlay.releasePointerCapture(pressedPointerId);
   }
@@ -693,10 +781,12 @@ document.addEventListener("pointerup", (event) => {
 });
 
 document.addEventListener("pointercancel", (event) => {
-  if (!pressedId) return;
+  if (!pointerPressActive) return;
   sendTerminalPointerEvent("cancel", event);
   pressedId = null;
+  pointerPressActive = false;
   dragging = false;
+  visibilityControl.classList.remove("is-dragging");
   pressedPointerId = null;
   hoveredId = null;
   setMouseEventsEnabled(false);
@@ -704,7 +794,7 @@ document.addEventListener("pointercancel", (event) => {
 });
 
 window.addEventListener("blur", () => {
-  if (!pressedId) {
+  if (!pointerPressActive) {
     hoveredId = null;
     setMouseEventsEnabled(false);
     scheduleRender();

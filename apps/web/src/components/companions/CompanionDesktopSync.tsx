@@ -1,3 +1,4 @@
+import { completedCompanionTurnId } from "@t3tools/client-runtime/companions";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type {
   CompanionAssignment,
@@ -15,7 +16,15 @@ import {
 } from "react";
 
 import { useClientSettings, useClientSettingsHydrated } from "~/hooks/useSettings";
+import { useThreadShell } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
+import {
+  advanceCompanionCompletionTracker,
+  initialCompanionCompletionTrackerState,
+  playCompanionCompletionSound,
+  preloadCompanionCompletionSound,
+  stopCompanionCompletionSound,
+} from "./companionCompletionSound";
 import {
   projectUnavailableCompanion,
   useCompanionThreadProjection,
@@ -90,15 +99,20 @@ function CompanionProjectionObserver({
   desktopEnabled,
   desktopPreviewsEnabled,
   connectionAvailable,
+  completionSoundEligible,
+  onCompletion,
   onProjection,
 }: {
   readonly assignment: CompanionAssignment;
   readonly desktopEnabled: boolean;
   readonly desktopPreviewsEnabled: boolean;
   readonly connectionAvailable: boolean;
+  readonly completionSoundEligible: boolean;
+  readonly onCompletion: () => void;
   readonly onProjection: (key: string, projection: CompanionProjection) => void;
 }) {
   const projectionKey = assignmentProjectionKey(assignment.companionId, assignment.threadRef);
+  const thread = useThreadShell(assignment.threadRef);
   const projection = useCompanionThreadProjection({
     assignment,
     desktopEnabled,
@@ -108,6 +122,25 @@ function CompanionProjectionObserver({
   useLayoutEffect(() => {
     onProjection(projectionKey, projection);
   }, [onProjection, projection, projectionKey]);
+  const completionTrackerRef = useRef(initialCompanionCompletionTrackerState());
+  const completedTurnId = completedCompanionTurnId(thread);
+  useEffect(() => {
+    const transition = advanceCompanionCompletionTracker(completionTrackerRef.current, {
+      authoritative: thread !== null,
+      completedTurnId,
+      signal: projection.signal,
+      eligible: completionSoundEligible && projection.showOnDesktop,
+    });
+    completionTrackerRef.current = transition.state;
+    if (transition.shouldPlay) onCompletion();
+  }, [
+    completedTurnId,
+    completionSoundEligible,
+    onCompletion,
+    projection.showOnDesktop,
+    projection.signal,
+    thread,
+  ]);
 
   return null;
 }
@@ -116,6 +149,9 @@ export function CompanionDesktopSync() {
   const hydrated = useClientSettingsHydrated();
   const assignments = useClientSettings((settings) => settings.companionAssignments);
   const desktopEnabled = useClientSettings((settings) => settings.companionDesktopEnabled);
+  const completionSoundEnabled = useClientSettings(
+    (settings) => settings.companionDesktopCompletionSoundEnabled,
+  );
   const desktopPreviewsEnabled = useClientSettings(
     (settings) => settings.companionDesktopPreviewsEnabled,
   );
@@ -126,6 +162,8 @@ export function CompanionDesktopSync() {
     (settings) => settings.companionDesktopScalePercent,
   );
   const { environments } = useEnvironments();
+  const desktopRuntimeAvailable =
+    typeof window.desktopBridge?.companions?.syncProjection === "function";
   const environmentConnectedById = useMemo(
     () =>
       new Map(
@@ -147,6 +185,20 @@ export function CompanionDesktopSync() {
     () => new Map<string, CompanionProjection>(),
   );
   const [retryToken, setRetryToken] = useState(0);
+
+  useEffect(() => {
+    if (completionSoundEnabled && desktopRuntimeAvailable) {
+      preloadCompanionCompletionSound();
+      return;
+    }
+    stopCompanionCompletionSound();
+  }, [completionSoundEnabled, desktopRuntimeAvailable]);
+
+  const playCompletionSound = useCallback(() => {
+    if (completionSoundEnabled && desktopRuntimeAvailable) {
+      playCompanionCompletionSound();
+    }
+  }, [completionSoundEnabled, desktopRuntimeAvailable]);
 
   const updateProjection = useCallback((key: string, projection: CompanionProjection) => {
     setProjectionByKey((current) => {
@@ -272,9 +324,11 @@ export function CompanionDesktopSync() {
               assignment={assignment}
               desktopEnabled={desktopEnabled}
               desktopPreviewsEnabled={desktopPreviewsEnabled}
+              completionSoundEligible={desktopRuntimeAvailable}
               connectionAvailable={
                 environmentConnectedById.get(assignment.threadRef.environmentId) ?? false
               }
+              onCompletion={playCompletionSound}
               onProjection={updateProjection}
             />
           </Fragment>

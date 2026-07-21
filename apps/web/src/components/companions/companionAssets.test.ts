@@ -54,4 +54,12 @@ describe("companion assets", () => {
       expect(((dimensions >>> 14) & 0x3fff) + 1).toBe(COMPANION_ATLAS.height);
     }
   });
+
+  it("ships the custom completion notification sound", () => {
+    const bytes = NodeFS.readFileSync(
+      new URL("../../../public/companions/sounds/completion.mp3", import.meta.url),
+    );
+    expect(bytes.byteLength).toBeGreaterThan(64_000);
+    expect(bytes.toString("ascii", 0, 3)).toBe("ID3");
+  });
 });

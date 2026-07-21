@@ -10,12 +10,13 @@ import {
   companionDisplayDimensions,
   sidebarCompanionDisplayDimensions,
 } from "@t3tools/client-runtime/companions";
-import { LoaderIcon, RotateCcwIcon } from "lucide-react";
+import { LoaderIcon, RotateCcwIcon, Volume2Icon } from "lucide-react";
 import { useCallback, useState } from "react";
 
 import { isElectron } from "~/env";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { isMacPlatform } from "~/lib/utils";
+import { playCompanionCompletionSound } from "../companions/companionCompletionSound";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
@@ -88,7 +89,8 @@ export function CompanionSettingsPanel() {
       toastManager.add({
         type: "success",
         title: "Desktop positions reset",
-        description: "Companions were arranged again from the bottom-right corner.",
+        description:
+          "Companions and their visibility control were returned to their default positions.",
       });
     } catch (error) {
       toastManager.add({
@@ -150,6 +152,35 @@ export function CompanionSettingsPanel() {
                 updateSettings({ companionDesktopScalePercent })
               }
             />
+          }
+        />
+
+        <SettingsRow
+          title="Completion sound"
+          description="Play the supplied notification sound once when a desktop companion finishes an unseen turn."
+          control={
+            <div className="flex items-center gap-2">
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={!desktopSupported}
+                aria-label="Preview companion completion sound"
+                onClick={playCompanionCompletionSound}
+              >
+                <Volume2Icon className="size-3.5" />
+                Preview
+              </Button>
+              <Switch
+                checked={settings.companionDesktopCompletionSoundEnabled}
+                disabled={!desktopSupported}
+                aria-label="Play companion completion sound"
+                onCheckedChange={(checked) =>
+                  updateSettings({
+                    companionDesktopCompletionSoundEnabled: Boolean(checked),
+                  })
+                }
+              />
+            </div>
           }
         />
 
@@ -224,7 +255,7 @@ export function CompanionSettingsPanel() {
 
         <SettingsRow
           title="Desktop positions"
-          description="Return all visible companions to an orderly layout in the bottom-right corner."
+          description="Return every companion and the movable visibility control to their default desktop positions."
           control={
             <Button
               size="xs"
