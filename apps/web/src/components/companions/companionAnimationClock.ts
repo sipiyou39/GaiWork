@@ -14,7 +14,10 @@ function emit() {
 
 function tick(time: number) {
   animationFrame = null;
-  if (typeof document === "undefined" || !document.hidden) {
+  const presentationTransitioning =
+    typeof document !== "undefined" &&
+    document.documentElement.dataset.mainWindowTransitioning === "true";
+  if ((typeof document === "undefined" || !document.hidden) && !presentationTransitioning) {
     currentTime = time;
     if (time - lastEmission >= 40) {
       lastEmission = time;

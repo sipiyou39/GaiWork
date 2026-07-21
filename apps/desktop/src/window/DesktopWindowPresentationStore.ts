@@ -8,6 +8,10 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
+import {
+  MainWindowPresentationMode,
+  type MainWindowPresentationMode as PresentationMode,
+} from "@t3tools/contracts";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
@@ -36,6 +40,9 @@ const CompactWindowPositionSchema = Schema.Struct({
 
 const DesktopWindowPresentationDocument = Schema.Struct({
   version: Schema.Literal(1),
+  mode: MainWindowPresentationMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("workspace" as const)),
+  ),
   compact: Schema.NullOr(CompactWindowPositionSchema),
 });
 
@@ -126,9 +133,16 @@ function normalizePosition(position: CompactWindowPosition): CompactWindowPositi
   };
 }
 
+interface DesktopWindowPresentationState {
+  readonly mode: PresentationMode;
+  readonly compact: CompactWindowPosition | null;
+}
+
 export class DesktopWindowPresentationStore extends Context.Service<
   DesktopWindowPresentationStore,
   {
+    readonly getPresentationMode: Effect.Effect<PresentationMode>;
+    readonly setPresentationMode: (mode: PresentationMode) => Effect.Effect<void>;
     readonly getCompactPosition: Effect.Effect<CompactWindowPosition | null>;
     readonly setCompactPosition: (position: CompactWindowPosition) => Effect.Effect<void>;
   }
@@ -139,7 +153,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
-  const initialPosition = yield* fileSystem.readFileString(environment.windowPresentationPath).pipe(
+  const initialState = yield* fileSystem.readFileString(environment.windowPresentationPath).pipe(
     Effect.map(Option.some),
     Effect.catchTags({
       PlatformError: (cause) =>
@@ -151,27 +165,36 @@ export const make = Effect.gen(function* () {
     }),
     Effect.flatMap(
       Option.match({
-        onNone: () => Effect.succeed(null),
+        onNone: () =>
+          Effect.succeed<DesktopWindowPresentationState>({ mode: "workspace", compact: null }),
         onSome: (raw) =>
           decodePresentationJson(raw).pipe(
-            Effect.map((document) =>
-              document.compact === null ? null : normalizePosition(document.compact),
+            Effect.map(
+              (document): DesktopWindowPresentationState => ({
+                mode: document.mode,
+                compact: document.compact === null ? null : normalizePosition(document.compact),
+              }),
             ),
             Effect.catch((cause) =>
               Effect.logWarning(
                 "Could not decode desktop window presentation; using defaults.",
                 cause,
-              ).pipe(Effect.as(null)),
+              ).pipe(
+                Effect.as<DesktopWindowPresentationState>({
+                  mode: "workspace",
+                  compact: null,
+                }),
+              ),
             ),
           ),
       }),
     ),
   );
-  const positionRef = yield* SynchronizedRef.make<CompactWindowPosition | null>(initialPosition);
+  const stateRef = yield* SynchronizedRef.make<DesktopWindowPresentationState>(initialState);
 
-  const persist = (position: CompactWindowPosition | null) =>
+  const persist = (state: DesktopWindowPresentationState) =>
     Effect.gen(function* () {
-      const encoded = yield* encodePresentationJson({ version: 1, compact: position });
+      const encoded = yield* encodePresentationJson({ version: 1, ...state });
       const suffix = (yield* crypto.randomUUIDv4).replaceAll("-", "");
       const directory = path.dirname(environment.windowPresentationPath);
       const temporaryPath = `${environment.windowPresentationPath}.${process.pid}.${suffix}.tmp`;
@@ -187,13 +210,21 @@ export const make = Effect.gen(function* () {
     );
 
   return DesktopWindowPresentationStore.of({
-    getCompactPosition: SynchronizedRef.get(positionRef),
+    getPresentationMode: SynchronizedRef.get(stateRef).pipe(Effect.map((state) => state.mode)),
+    setPresentationMode: (mode) =>
+      SynchronizedRef.modifyEffect(stateRef, (state) => {
+        if (state.mode === mode) return Effect.succeed([undefined, state] as const);
+        const next = { ...state, mode };
+        return persist(next).pipe(Effect.as([undefined, next] as const));
+      }),
+    getCompactPosition: SynchronizedRef.get(stateRef).pipe(Effect.map((state) => state.compact)),
     setCompactPosition: (position) => {
       const normalized = normalizePosition(position);
       if (normalized === null) return Effect.void;
-      return SynchronizedRef.modifyEffect(positionRef, () =>
-        persist(normalized).pipe(Effect.as([undefined, normalized] as const)),
-      );
+      return SynchronizedRef.modifyEffect(stateRef, (state) => {
+        const next = { ...state, compact: normalized };
+        return persist(next).pipe(Effect.as([undefined, next] as const));
+      });
     },
   });
 });

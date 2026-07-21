@@ -223,7 +223,7 @@ export type MainWindowPresentationAcknowledgement =
 
 export const CompanionConversationNavigation = Schema.Struct({
   threadRef: ScopedThreadRef,
-  presentation: Schema.Literal("conversation-focus"),
+  presentation: MainWindowPresentationMode,
 });
 export type CompanionConversationNavigation = typeof CompanionConversationNavigation.Type;
 

@@ -4,6 +4,16 @@
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
 
+/* Presentation switches intentionally happen in one compositor frame. Live
+   width animations force Chromium to repeatedly reflow the virtualized chat
+   timeline and are visibly uneven in Electron, especially on 120 Hz panels. */
+html[data-main-window-transitioning="true"] [data-slot="sidebar-gap"],
+html[data-main-window-transitioning="true"] [data-slot="sidebar-container"],
+html[data-main-window-transitioning="true"] [data-chat-header],
+html[data-main-window-transitioning="true"] [data-chat-header-workspace-actions] {
+  transition: none !important;
+}
+
 /* On mobile, morph the expanded hero composer into the compact docked
    composer while it moves; the rest of the app remains visually stationary. */
 html[data-mobile-composer-route-transition="true"]::view-transition-old(root),

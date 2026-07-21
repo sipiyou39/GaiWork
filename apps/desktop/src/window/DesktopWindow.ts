@@ -5,9 +5,11 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Semaphore from "effect/Semaphore";
 
 import * as Electron from "electron";
 import type {
+  CompanionConversationNavigation,
   MainWindowPresentationAcknowledgement,
   MainWindowPresentationMode,
   MainWindowPresentationSnapshot,
@@ -182,6 +184,15 @@ export function isRetryableDevelopmentRendererLoadFailure(input: {
   );
 }
 
+function rectanglesEqual(left: Electron.Rectangle, right: Electron.Rectangle): boolean {
+  return (
+    left.x === right.x &&
+    left.y === right.y &&
+    left.width === right.width &&
+    left.height === right.height
+  );
+}
+
 function getWindowTitleBarOptions(
   shouldUseDarkColors: boolean,
   platform: NodeJS.Platform,
@@ -247,6 +258,7 @@ export const make = Effect.gen(function* () {
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const presentationStore = yield* DesktopWindowPresentationStore.DesktopWindowPresentationStore;
   const previewManager = yield* PreviewManager.PreviewManager;
+  const initialPresentationMode = yield* presentationStore.getPresentationMode;
   // Window-side latch for the primary backend's readiness. Set by
   // handleBackendReady (driven by the pool's onReady callback), cleared
   // by handleBackendNotReady (driven by onShutdown). Only consumed by
@@ -256,12 +268,15 @@ export const make = Effect.gen(function* () {
   // The transient "Connecting to WSL" splash window, tracked separately so it
   // is never mistaken for the real main window.
   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
-  const pendingNavigationRef = yield* Ref.make<Option.Option<ScopedThreadRef>>(Option.none());
+  const pendingNavigationRef = yield* Ref.make<Option.Option<CompanionConversationNavigation>>(
+    Option.none(),
+  );
   const deferAutomaticRevealRef = yield* Ref.make(false);
   const presentationRef = yield* Ref.make<MainWindowPresentationSnapshot>({
-    mode: "workspace",
+    mode: initialPresentationMode,
     transitionId: 0,
   });
+  const presentationTransitionLock = yield* Semaphore.make(1);
   const lastAcknowledgedPresentationRef = yield* Ref.make(-1);
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
@@ -280,13 +295,10 @@ export const make = Effect.gen(function* () {
       Effect.flatMap(
         Option.match({
           onNone: () => Effect.void,
-          onSome: (threadRef) =>
+          onSome: (navigation) =>
             Effect.sync(() => {
               if (!window.isDestroyed()) {
-                window.webContents.send(COMPANION_NAVIGATE_THREAD_CHANNEL, {
-                  threadRef,
-                  presentation: "conversation-focus",
-                });
+                window.webContents.send(COMPANION_NAVIGATE_THREAD_CHANNEL, navigation);
               }
             }),
         }),
@@ -451,68 +463,112 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const transitionPresentation = Effect.fn("desktop.window.transitionPresentation")(function* (
+  const setWindowBounds = (
     window: Electron.BrowserWindow,
-    mode: MainWindowPresentationMode,
-    anchor: CompanionWindowAnchor | null,
-  ) {
-    const current = yield* Ref.get(presentationRef);
-    const modeChanged = current.mode !== mode;
-    const snapshot: MainWindowPresentationSnapshot = !modeChanged
-      ? current
-      : {
-          mode,
-          transitionId: current.transitionId + 1,
-        };
-    if (snapshot !== current) {
-      yield* Ref.set(presentationRef, snapshot);
-    }
+    bounds: Electron.Rectangle,
+  ): Effect.Effect<void> =>
+    Effect.sync(() => {
+      if (rectanglesEqual(window.getBounds(), bounds)) return;
+      // Live BrowserWindow resizing makes Chromium reflow the conversation on
+      // every intermediate macOS frame. A single non-animated bounds commit is
+      // intentionally used so presentation changes are crisp and atomic.
+      window.setBounds(bounds, false);
+    });
 
-    const wasVisible = window.isVisible();
-    if (mode === "conversation-focus") {
-      const compact = yield* resolveCompactBounds(anchor);
+  const normalizeNativeWindowState = (window: Electron.BrowserWindow) =>
+    Effect.sync(() => {
       if (window.isFullScreen()) window.setFullScreen(false);
-      if (window.isMaximized()) window.unmaximize();
-      window.setMinimumSize(
-        Math.min(
-          DesktopWindowPresentationStore.COMPACT_WINDOW_MIN_WIDTH,
-          compact.display.workArea.width,
-        ),
-        compact.display.workArea.height,
-      );
-      window.setMaximumSize(
-        Math.min(
-          DesktopWindowPresentationStore.COMPACT_WINDOW_MAX_WIDTH,
-          compact.display.workArea.width,
-        ),
-        compact.display.workArea.height,
-      );
+      if (!window.isMaximized()) return;
+      const currentBounds = window.getBounds();
+      window.unmaximize();
+      // Preserve the visible geometry while leaving Electron's native maximized
+      // state. The following setBounds call is then the sole animated morph.
+      window.setBounds(currentBounds, false);
+    });
+
+  const transitionPresentationUnlocked = Effect.fn("desktop.window.transitionPresentationUnlocked")(
+    function* (
+      window: Electron.BrowserWindow,
+      mode: MainWindowPresentationMode,
+      anchor: CompanionWindowAnchor | null,
+    ) {
+      const current = yield* Ref.get(presentationRef);
+      const modeChanged = current.mode !== mode;
+      const snapshot: MainWindowPresentationSnapshot = !modeChanged
+        ? current
+        : {
+            mode,
+            transitionId: current.transitionId + 1,
+          };
+      if (snapshot !== current) {
+        yield* Ref.set(presentationRef, snapshot);
+        yield* presentationStore.setPresentationMode(mode);
+      }
+
+      const wasVisible = window.isVisible();
+      yield* normalizeNativeWindowState(window);
+      // Constraints can resize a BrowserWindow synchronously. Relax them while
+      // morphing so macOS performs exactly one compositor-driven bounds change,
+      // then restore the mode-specific constraints on the final geometry.
+      window.setMaximumSize(100_000, 100_000);
+      window.setMinimumSize(1, 1);
+      if (mode === "conversation-focus") {
+        const compact = yield* resolveCompactBounds(anchor);
+        if (wasVisible && modeChanged) {
+          yield* sendPresentationAndAwait(window, snapshot);
+        }
+        yield* setWindowBounds(window, compact.bounds);
+        window.setMinimumSize(
+          Math.min(
+            DesktopWindowPresentationStore.COMPACT_WINDOW_MIN_WIDTH,
+            compact.display.workArea.width,
+          ),
+          compact.display.workArea.height,
+        );
+        window.setMaximumSize(
+          Math.min(
+            DesktopWindowPresentationStore.COMPACT_WINDOW_MAX_WIDTH,
+            compact.display.workArea.width,
+          ),
+          compact.display.workArea.height,
+        );
+        yield* presentationStore.setCompactPosition(
+          DesktopWindowPresentationStore.compactWindowPositionFromBounds({
+            displayId: String(compact.display.id),
+            bounds: compact.bounds,
+            workArea: compact.display.workArea,
+          }),
+        );
+        if (!wasVisible && modeChanged) {
+          yield* sendPresentationAndAwait(window, snapshot);
+        }
+        return snapshot;
+      }
+
+      const workspaceDisplay = anchor
+        ? Electron.screen.getDisplayMatching(anchor.bounds)
+        : Electron.screen.getDisplayMatching(window.getBounds());
       if (wasVisible && modeChanged) {
         yield* sendPresentationAndAwait(window, snapshot);
       }
-      window.setBounds(compact.bounds, wasVisible && environment.platform === "darwin");
-      yield* presentationStore.setCompactPosition(
-        DesktopWindowPresentationStore.compactWindowPositionFromBounds({
-          displayId: String(compact.display.id),
-          bounds: compact.bounds,
-          workArea: compact.display.workArea,
-        }),
+      yield* setWindowBounds(window, workspaceDisplay.workArea);
+      window.setMinimumSize(
+        Math.min(WORKSPACE_MIN_WIDTH, workspaceDisplay.workArea.width),
+        Math.min(WORKSPACE_MIN_HEIGHT, workspaceDisplay.workArea.height),
       );
       if (!wasVisible && modeChanged) {
         yield* sendPresentationAndAwait(window, snapshot);
       }
       return snapshot;
-    }
+    },
+  );
 
-    if (window.isFullScreen()) window.setFullScreen(false);
-    window.setMaximumSize(100_000, 100_000);
-    window.setMinimumSize(WORKSPACE_MIN_WIDTH, WORKSPACE_MIN_HEIGHT);
-    if (!window.isMaximized()) window.maximize();
-    if (modeChanged) {
-      yield* sendPresentationAndAwait(window, snapshot);
-    }
-    return snapshot;
-  });
+  const transitionPresentation = (
+    window: Electron.BrowserWindow,
+    mode: MainWindowPresentationMode,
+    anchor: CompanionWindowAnchor | null,
+  ) =>
+    presentationTransitionLock.withPermits(1)(transitionPresentationUnlocked(window, mode, anchor));
 
   const createWindow = Effect.fn("desktop.window.createWindow")(function* (): Effect.fn.Return<
     Electron.BrowserWindow,
@@ -855,6 +911,8 @@ export const make = Effect.gen(function* () {
   const createMain = Effect.gen(function* () {
     const window = yield* createWindow();
     yield* electronWindow.setMain(window);
+    const presentation = yield* Ref.get(presentationRef);
+    yield* transitionPresentation(window, presentation.mode, null);
     yield* logWindowInfo("main window created");
     return window;
   }).pipe(Effect.withSpan("desktop.window.createMain"));
@@ -911,13 +969,17 @@ export const make = Effect.gen(function* () {
 
   const openCompanionConversation = Effect.fn("desktop.window.openCompanionConversation")(
     function* (threadRef: ScopedThreadRef, anchor: CompanionWindowAnchor) {
-      yield* Ref.set(pendingNavigationRef, Option.some(threadRef));
+      const presentation = yield* Ref.get(presentationRef);
+      yield* Ref.set(
+        pendingNavigationRef,
+        Option.some({ threadRef, presentation: presentation.mode }),
+      );
       const existingWindow = yield* currentMainWindow;
       if (Option.isNone(existingWindow)) {
         yield* Ref.set(deferAutomaticRevealRef, true);
       }
       const window = Option.isSome(existingWindow) ? existingWindow.value : yield* ensureMain;
-      yield* transitionPresentation(window, "conversation-focus", anchor);
+      yield* transitionPresentation(window, presentation.mode, anchor);
       if (window.webContents.isLoadingMainFrame()) {
         scheduleRevealAfterRendererReady(window);
         return window;

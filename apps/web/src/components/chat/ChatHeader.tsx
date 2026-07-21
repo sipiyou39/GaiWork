@@ -11,7 +11,7 @@ import {
 } from "@t3tools/client-runtime/companions";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { Maximize2Icon, Minimize2Icon, PlusIcon } from "lucide-react";
-import { memo } from "react";
+import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -61,6 +61,45 @@ export function shouldShowOpenInPicker(input: {
     Boolean(input.activeProjectName) &&
     input.primaryEnvironmentId !== null &&
     input.activeThreadEnvironmentId === input.primaryEnvironmentId
+  );
+}
+
+function WorkspaceHeaderActions({
+  children,
+  hidden,
+}: {
+  readonly children: ReactNode;
+  readonly hidden: boolean;
+}) {
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [expandedWidth, setExpandedWidth] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const measure = () => setExpandedWidth(content.scrollWidth);
+    measure();
+    if (typeof ResizeObserver !== "function") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div
+      aria-hidden={hidden || undefined}
+      className={cn(
+        "shrink-0 overflow-hidden",
+        hidden ? "pointer-events-none translate-x-1 opacity-0" : "translate-x-0 opacity-100",
+      )}
+      data-chat-header-workspace-actions=""
+      inert={hidden || undefined}
+      style={{ width: hidden ? 0 : (expandedWidth ?? "auto") }}
+    >
+      <div ref={contentRef} className="flex w-max items-center gap-2 @3xl/header-actions:gap-3">
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -170,32 +209,34 @@ export const ChatHeader = memo(function ChatHeader({
           rightPanelOpen || isConversationFocus ? "pr-0" : "pr-16",
         )}
       >
-        {!isConversationFocus && activeProjectScripts && (
-          <ProjectScriptsControl
-            scripts={activeProjectScripts}
-            keybindings={keybindings}
-            preferredScriptId={preferredScriptId}
-            onRunScript={onRunProjectScript}
-            onAddScript={onAddProjectScript}
-            onUpdateScript={onUpdateProjectScript}
-            onDeleteScript={onDeleteProjectScript}
-          />
-        )}
-        {!isConversationFocus && showOpenInPicker && (
-          <OpenInPicker
-            environmentId={activeThreadEnvironmentId}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            openInCwd={openInCwd}
-          />
-        )}
-        {!isConversationFocus && activeProjectName && (
-          <GitActionsControl
-            gitCwd={gitCwd}
-            activeThreadRef={threadRef}
-            {...(draftId ? { draftId } : {})}
-          />
-        )}
+        <WorkspaceHeaderActions hidden={isConversationFocus}>
+          {activeProjectScripts ? (
+            <ProjectScriptsControl
+              scripts={activeProjectScripts}
+              keybindings={keybindings}
+              preferredScriptId={preferredScriptId}
+              onRunScript={onRunProjectScript}
+              onAddScript={onAddProjectScript}
+              onUpdateScript={onUpdateProjectScript}
+              onDeleteScript={onDeleteProjectScript}
+            />
+          ) : null}
+          {showOpenInPicker ? (
+            <OpenInPicker
+              environmentId={activeThreadEnvironmentId}
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              openInCwd={openInCwd}
+            />
+          ) : null}
+          {activeProjectName ? (
+            <GitActionsControl
+              gitCwd={gitCwd}
+              activeThreadRef={threadRef}
+              {...(draftId ? { draftId } : {})}
+            />
+          ) : null}
+        </WorkspaceHeaderActions>
         {canControlWindowPresentation ? (
           <Tooltip>
             <TooltipTrigger

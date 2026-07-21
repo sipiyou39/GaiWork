@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  Sidebar,
   SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuSubButton,
@@ -37,6 +38,21 @@ describe("sidebar interactive cursors", () => {
     );
 
     expect(html).toContain('data-sidebar-state="collapsed"');
+  });
+
+  it("keeps presentation-hidden sidebar content mounted and non-interactive", () => {
+    const html = renderToStaticMarkup(
+      <SidebarProvider>
+        <Sidebar presentationHidden>
+          <span>Persistent sidebar content</span>
+        </Sidebar>
+      </SidebarProvider>,
+    );
+
+    expect(html).toContain('data-presentation-hidden="true"');
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain("inert");
+    expect(html).toContain("Persistent sidebar content");
   });
 
   it("keeps the sidebar trigger interactive inside Electron drag regions", () => {

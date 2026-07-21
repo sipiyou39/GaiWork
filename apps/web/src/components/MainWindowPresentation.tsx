@@ -43,6 +43,7 @@ export function MainWindowPresentationProvider({ children }: { children: ReactNo
   const [presentation, setPresentation] = useState(initialPresentation);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const presentationRef = useRef(presentation);
+  const transitionPromiseRef = useRef<Promise<void> | null>(null);
   presentationRef.current = presentation;
 
   useEffect(() => {
@@ -61,16 +62,40 @@ export function MainWindowPresentationProvider({ children }: { children: ReactNo
   }, []);
 
   useLayoutEffect(() => {
+    let cancelled = false;
     document.documentElement.dataset.mainWindowPresentation = presentation.mode;
-    void window.desktopBridge?.mainWindow
-      ?.acknowledgePresentation(presentation)
-      .catch(() => undefined);
+    const bridge = window.desktopBridge?.mainWindow;
+    // The microtask runs after the complete React layout-effect pass but still
+    // before the browser's next paint in normal operation. Electron can then
+    // commit the matching native bounds in the same visual frame.
+    queueMicrotask(() => {
+      if (cancelled) return;
+      void bridge?.acknowledgePresentation(presentation).catch(() => undefined);
+    });
     return () => {
+      cancelled = true;
       delete document.documentElement.dataset.mainWindowPresentation;
     };
   }, [presentation]);
 
+  useLayoutEffect(() => {
+    if (isTransitioning) {
+      document.documentElement.dataset.mainWindowTransitioning = "true";
+    } else {
+      delete document.documentElement.dataset.mainWindowTransitioning;
+    }
+    return () => {
+      delete document.documentElement.dataset.mainWindowTransitioning;
+    };
+  }, [isTransitioning]);
+
   const requestPresentation = useCallback(async (mode: MainWindowPresentationMode) => {
+    if (presentationRef.current.mode === mode) return;
+    if (transitionPromiseRef.current) {
+      await transitionPromiseRef.current;
+      if (presentationRef.current.mode === mode) return;
+    }
+
     const bridge = window.desktopBridge?.mainWindow;
     if (!bridge) {
       setPresentation((current) => ({
@@ -79,15 +104,27 @@ export function MainWindowPresentationProvider({ children }: { children: ReactNo
       }));
       return;
     }
-    if (presentationRef.current.mode === mode) return;
-    setIsTransitioning(true);
+
+    const transition = (async () => {
+      document.documentElement.dataset.mainWindowTransitioning = "true";
+      setIsTransitioning(true);
+      try {
+        const snapshot = await bridge.requestPresentation(mode);
+        setPresentation((current) =>
+          snapshot.transitionId >= current.transitionId ? snapshot : current,
+        );
+      } finally {
+        delete document.documentElement.dataset.mainWindowTransitioning;
+        setIsTransitioning(false);
+      }
+    })();
+    transitionPromiseRef.current = transition;
     try {
-      const snapshot = await bridge.requestPresentation(mode);
-      setPresentation((current) =>
-        snapshot.transitionId < current.transitionId ? current : snapshot,
-      );
+      await transition;
     } finally {
-      setIsTransitioning(false);
+      if (transitionPromiseRef.current === transition) {
+        transitionPromiseRef.current = null;
+      }
     }
   }, []);
 

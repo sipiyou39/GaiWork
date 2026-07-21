@@ -34,17 +34,23 @@ describe("companion IPC contracts", () => {
     ).toThrow();
   });
 
-  it("pins companion navigation to conversation focus", () => {
+  it("retains the current presentation while navigating from a companion", () => {
     expect(
       decodeNavigation({
         threadRef: { environmentId: "environment-test", threadId: "thread-test" },
         presentation: "conversation-focus",
       }).presentation,
     ).toBe("conversation-focus");
-    expect(() =>
+    expect(
       decodeNavigation({
         threadRef: { environmentId: "environment-test", threadId: "thread-test" },
         presentation: "workspace",
+      }).presentation,
+    ).toBe("workspace");
+    expect(() =>
+      decodeNavigation({
+        threadRef: { environmentId: "environment-test", threadId: "thread-test" },
+        presentation: "fullscreen",
       }),
     ).toThrow();
   });

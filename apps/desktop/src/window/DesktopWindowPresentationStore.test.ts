@@ -1,4 +1,12 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+
+import * as DesktopConfig from "../app/DesktopConfig.ts";
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
 import {
   compactWindowBoundsFromPosition,
@@ -7,6 +15,38 @@ import {
   constrainCompactWindowWidth,
   defaultCompactWindowBounds,
 } from "./DesktopWindowPresentationStore.ts";
+import * as DesktopWindowPresentationStore from "./DesktopWindowPresentationStore.ts";
+
+const decodePersistedPresentation = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      mode: Schema.String,
+      compact: Schema.Unknown,
+    }),
+  ),
+);
+
+function makeStoreLayer(baseDir: string) {
+  const environmentLayer = DesktopEnvironment.layer({
+    dirname: "/repo/apps/desktop/src",
+    homeDirectory: baseDir,
+    platform: "darwin",
+    processArch: "arm64",
+    appVersion: "1.2.3",
+    appPath: "/repo",
+    isPackaged: true,
+    resourcesPath: "/missing/resources",
+    runningUnderArm64Translation: false,
+  }).pipe(
+    Layer.provide(
+      Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({ T3CODE_HOME: baseDir })),
+    ),
+  );
+  return DesktopWindowPresentationStore.layer.pipe(
+    Layer.provideMerge(environmentLayer),
+    Layer.provideMerge(NodeServices.layer),
+  );
+}
 
 describe("desktop window presentation geometry", () => {
   it("adapts the initial width around 720 points", () => {
@@ -46,4 +86,45 @@ describe("desktop window presentation geometry", () => {
     assert.equal(constrainCompactWindowWidth(300, 1_440), 640);
     assert.equal(constrainCompactWindowWidth(720, 600), 600);
   });
+
+  it.effect("defaults legacy files to workspace and persists the retained mode atomically", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "gaiwork-window-presentation-test-",
+      });
+      const presentationPath = `${baseDir}/userdata/window-presentation.json`;
+      yield* fileSystem.makeDirectory(`${baseDir}/userdata`, { recursive: true });
+      yield* fileSystem.writeFileString(
+        presentationPath,
+        '{"version":1,"compact":{"displayId":"42","normalizedX":0.75,"width":720}}\n',
+      );
+
+      yield* Effect.gen(function* () {
+        const store = yield* DesktopWindowPresentationStore.DesktopWindowPresentationStore;
+        assert.equal(yield* store.getPresentationMode, "workspace");
+        assert.deepEqual(yield* store.getCompactPosition, {
+          displayId: "42",
+          normalizedX: 0.75,
+          width: 720,
+        });
+        yield* store.setPresentationMode("conversation-focus");
+      }).pipe(Effect.provide(makeStoreLayer(baseDir)));
+
+      const persisted = yield* decodePersistedPresentation(
+        yield* fileSystem.readFileString(presentationPath),
+      );
+      assert.equal(persisted.mode, "conversation-focus");
+      assert.deepEqual(persisted.compact, {
+        displayId: "42",
+        normalizedX: 0.75,
+        width: 720,
+      });
+
+      yield* Effect.gen(function* () {
+        const store = yield* DesktopWindowPresentationStore.DesktopWindowPresentationStore;
+        assert.equal(yield* store.getPresentationMode, "conversation-focus");
+      }).pipe(Effect.provide(makeStoreLayer(baseDir)));
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
 });
