@@ -79,7 +79,7 @@ function cleanupStaleDevApps() {
     return;
   }
 
-  NodeChildProcess.spawnSync("pkill", ["-f", "--", `--gaiwork-dev-root=${desktopDir}`], {
+  NodeChildProcess.spawnSync("pkill", ["-f", "--", `--doudou-code-dev-root=${desktopDir}`], {
     stdio: "ignore",
   });
 }
@@ -94,7 +94,7 @@ function startApp() {
     : [];
   const launchArgs = devProtocolClient
     ? electronArgs
-    : [...electronArgs, `--gaiwork-dev-root=${desktopDir}`, "dist-electron/main.cjs"];
+    : [...electronArgs, `--doudou-code-dev-root=${desktopDir}`, "dist-electron/main.cjs"];
   const electronCommand = resolveElectronLaunchCommand(launchArgs);
   const app = NodeChildProcess.spawn(electronCommand.electronPath, electronCommand.args, {
     cwd: desktopDir,

@@ -93,7 +93,7 @@ const CompanionPreviewText = (maximum: number) =>
     .check(Schema.isNonEmpty())
     .check(Schema.isMaxLength(maximum));
 
-/** Compact, plain-text view of the most recent exchange known by GaiWork. */
+/** Compact, plain-text view of the most recent exchange known by Doudou Code. */
 export const CompanionConversationPreview = Schema.Struct({
   userMessageId: Schema.NullOr(MessageId),
   userText: Schema.NullOr(CompanionPreviewText(COMPANION_PREVIEW_USER_MAX_LENGTH)),

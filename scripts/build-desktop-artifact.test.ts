@@ -14,6 +14,7 @@ import {
   createStagePatchedDependencies,
   createBuildConfig,
   DESKTOP_ASAR_UNPACK,
+  hasMacPasskeySigningConfiguration,
   InvalidMacPasskeyRpDomainError,
   InvalidMacPasskeyPublishableKeyError,
   InvalidMockUpdateServerPortError,
@@ -86,8 +87,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   });
 
   it("switches desktop packaging product names to nightly for nightly builds", () => {
-    assert.equal(resolveDesktopProductName("0.0.17"), "GaiWork");
-    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "GaiWork (Nightly)");
+    assert.equal(resolveDesktopProductName("0.0.17"), "Doudou Code");
+    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "Doudou Code (Nightly)");
   });
 
   it("allows a clean local Release only from main", () => {
@@ -411,11 +412,26 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     });
 
     assert.deepStrictEqual(configuration, {
-      appId: "io.github.sipiyou39.gaiwork",
+      appId: "io.github.sipiyou39.doudoucode",
       teamId: "ABC1234567",
       rpDomains: ["example.clerk.accounts.dev"],
       provisioningProfilePath: "/tmp/t3code.provisionprofile",
     });
+  });
+
+  it("keeps standard macOS signing independent from optional passkey configuration", () => {
+    assert.isFalse(hasMacPasskeySigningConfiguration({}));
+    assert.isFalse(
+      hasMacPasskeySigningConfiguration({
+        T3CODE_APPLE_TEAM_ID: "   ",
+        T3CODE_CLERK_PUBLISHABLE_KEY: "",
+      }),
+    );
+    assert.isTrue(
+      hasMacPasskeySigningConfiguration({
+        T3CODE_CLERK_PASSKEY_RP_DOMAINS: "accounts.example.com",
+      }),
+    );
   });
 
   it("normalizes explicit macOS passkey RP domains and renders required entitlements", () => {
@@ -431,7 +447,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "clerk.example.com",
       "example.clerk.accounts.dev",
     ]);
-    assert.include(entitlements, "<string>ABC1234567.io.github.sipiyou39.gaiwork</string>");
+    assert.include(entitlements, "<string>ABC1234567.io.github.sipiyou39.doudoucode</string>");
     assert.include(entitlements, "<string>webcredentials:clerk.example.com</string>");
     assert.include(entitlements, "<string>webcredentials:example.clerk.accounts.dev</string>");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
@@ -526,11 +542,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       });
 
       const mac = config.mac as Record<string, unknown>;
-      assert.equal(config.appId, "io.github.sipiyou39.gaiwork");
+      assert.equal(config.appId, "io.github.sipiyou39.doudoucode");
+      assert.equal(config.artifactName, "Doudou-Code-1.2.3-${arch}.${ext}");
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
       assert.deepStrictEqual(mac.protocols, [
-        { name: "GaiWork", schemes: ["gaiwork", "gaiwork-dev"] },
+        { name: "Doudou Code", schemes: ["doudou-code", "doudou-code-dev"] },
       ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );

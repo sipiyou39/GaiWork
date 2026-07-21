@@ -39,7 +39,7 @@ if (!Number.isFinite(settleMs) || settleMs < 1_000) {
 }
 
 const temporaryRoot = NodeFS.mkdtempSync(
-  NodePath.join(NodeOS.tmpdir(), "gaiwork-companion-performance-"),
+  NodePath.join(NodeOS.tmpdir(), "doudou-code-companion-performance-"),
 );
 const harnessMainPath = NodePath.join(temporaryRoot, "main.cjs");
 const harnessPreloadPath = NodePath.join(temporaryRoot, "preload.cjs");
@@ -67,7 +67,7 @@ const projection = {
 contextBridge.exposeInMainWorld("companionBridge", {
   getInitialProjection: () => projection,
   onProjection: () => () => undefined,
-  notifyReady: () => ipcRenderer.send("gaiwork-performance-ready"),
+  notifyReady: () => ipcRenderer.send("doudou-code-performance-ready"),
   setInteractive: async () => undefined,
   sendPointerEvent: async () => undefined,
 });
@@ -116,7 +116,7 @@ function createCompanions() {
   });
 }
 
-ipcMain.on("gaiwork-performance-ready", (event) => {
+ipcMain.on("doudou-code-performance-ready", (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   window?.showInactive();
   console.log("GAIWORK_COMPANIONS_READY");

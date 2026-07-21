@@ -684,7 +684,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Claude is disabled in GaiWork settings.",
+        message: "Claude is disabled in Doudou Code settings.",
       },
     });
   }
@@ -843,7 +843,7 @@ export const makePendingClaudeProvider = (
           version: null,
           status: "warning",
           auth: { status: "unknown" },
-          message: "Claude is disabled in GaiWork settings.",
+          message: "Claude is disabled in Doudou Code settings.",
         },
       });
     }

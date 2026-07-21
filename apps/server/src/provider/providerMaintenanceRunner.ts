@@ -368,9 +368,9 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                 startedAt,
                 finishedAt,
                 message: couldNotVerify
-                  ? "Update command completed, but GaiWork could not verify the provider version."
+                  ? "Update command completed, but Doudou Code could not verify the provider version."
                   : stillOutdated
-                    ? "Update command completed, but GaiWork still detects an outdated provider version."
+                    ? "Update command completed, but Doudou Code still detects an outdated provider version."
                     : "Provider updated.",
                 output: commandOutput(result),
               }),

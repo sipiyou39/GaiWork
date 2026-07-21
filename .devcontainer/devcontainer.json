@@ -1,5 +1,5 @@
 {
-  "name": "GaiWork Dev",
+  "name": "Doudou Code Dev",
   "image": "debian:bookworm",
   "features": {
     "ghcr.io/devcontainers/features/git:1": {},

@@ -15,7 +15,7 @@ export function CompactBrandTitle() {
   return (
     <View
       aria-level={1}
-      accessibilityLabel="T3 Code"
+      accessibilityLabel="Doudou Code"
       accessible
       role="heading"
       style={{ alignItems: "center", flexDirection: "row", gap: 6 }}

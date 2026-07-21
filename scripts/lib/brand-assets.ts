@@ -1,11 +1,24 @@
+const DOUDOU_CODE_MAC_ICON_PNG = "assets/doudou-code/app-icon-macos-1024.png";
+const DOUDOU_CODE_WEB_ICON_PATHS = {
+  faviconIco: "assets/doudou-code/app-icon-web-favicon.ico",
+  favicon16Png: "assets/doudou-code/app-icon-web-favicon-16x16.png",
+  favicon32Png: "assets/doudou-code/app-icon-web-favicon-32x32.png",
+  appleTouchIconPng: "assets/doudou-code/app-icon-web-apple-touch-180.png",
+} as const;
+
 export const BRAND_ASSET_PATHS = {
+  doudouCodeMacIconPng: DOUDOU_CODE_MAC_ICON_PNG,
+  doudouCodeWebFaviconIco: DOUDOU_CODE_WEB_ICON_PATHS.faviconIco,
+  doudouCodeWebFavicon16Png: DOUDOU_CODE_WEB_ICON_PATHS.favicon16Png,
+  doudouCodeWebFavicon32Png: DOUDOU_CODE_WEB_ICON_PATHS.favicon32Png,
+  doudouCodeWebAppleTouchIconPng: DOUDOU_CODE_WEB_ICON_PATHS.appleTouchIconPng,
   developmentIconComposerProject: "assets/dev/app-icon.icon",
   developmentIosIconPng: "assets/dev/blueprint-ios-1024.png",
   developmentUniversalIconPng: "assets/dev/blueprint-universal-1024.png",
 
   productionIconComposerProject: "assets/prod/app-icon.icon",
   productionIosIconPng: "assets/prod/black-ios-1024.png",
-  productionMacIconPng: "assets/prod/black-macos-1024.png",
+  productionMacIconPng: DOUDOU_CODE_MAC_ICON_PNG,
   productionLinuxIconPng: "assets/prod/black-universal-1024.png",
   productionWindowsIconIco: "assets/prod/t3-black-windows.ico",
   productionWebFaviconIco: "assets/prod/t3-black-web-favicon.ico",
@@ -15,7 +28,7 @@ export const BRAND_ASSET_PATHS = {
 
   nightlyIconComposerProject: "assets/nightly/app-icon.icon",
   nightlyIosIconPng: "assets/nightly/nightly-ios-1024.png",
-  nightlyMacIconPng: "assets/nightly/nightly-macos-1024.png",
+  nightlyMacIconPng: DOUDOU_CODE_MAC_ICON_PNG,
   nightlyLinuxIconPng: "assets/nightly/nightly-universal-1024.png",
   nightlyWindowsIconIco: "assets/nightly/nightly-windows.ico",
   nightlyWebFaviconIco: "assets/nightly/nightly-web-favicon.ico",
@@ -23,7 +36,7 @@ export const BRAND_ASSET_PATHS = {
   nightlyWebFavicon32Png: "assets/nightly/nightly-web-favicon-32x32.png",
   nightlyWebAppleTouchIconPng: "assets/nightly/nightly-web-apple-touch-180.png",
 
-  developmentDesktopIconPng: "assets/dev/blueprint-macos-1024.png",
+  developmentDesktopIconPng: DOUDOU_CODE_MAC_ICON_PNG,
   developmentWindowsIconIco: "assets/dev/blueprint-windows.ico",
   developmentWebFaviconIco: "assets/dev/blueprint-web-favicon.ico",
   developmentWebFavicon16Png: "assets/dev/blueprint-web-favicon-16x16.png",
@@ -54,24 +67,9 @@ const WEB_ICON_TARGET_FILENAMES = {
 } as const;
 
 const WEB_ICON_SOURCE_PATHS_BY_BRAND = {
-  development: {
-    faviconIco: BRAND_ASSET_PATHS.developmentWebFaviconIco,
-    favicon16Png: BRAND_ASSET_PATHS.developmentWebFavicon16Png,
-    favicon32Png: BRAND_ASSET_PATHS.developmentWebFavicon32Png,
-    appleTouchIconPng: BRAND_ASSET_PATHS.developmentWebAppleTouchIconPng,
-  },
-  nightly: {
-    faviconIco: BRAND_ASSET_PATHS.nightlyWebFaviconIco,
-    favicon16Png: BRAND_ASSET_PATHS.nightlyWebFavicon16Png,
-    favicon32Png: BRAND_ASSET_PATHS.nightlyWebFavicon32Png,
-    appleTouchIconPng: BRAND_ASSET_PATHS.nightlyWebAppleTouchIconPng,
-  },
-  production: {
-    faviconIco: BRAND_ASSET_PATHS.productionWebFaviconIco,
-    favicon16Png: BRAND_ASSET_PATHS.productionWebFavicon16Png,
-    favicon32Png: BRAND_ASSET_PATHS.productionWebFavicon32Png,
-    appleTouchIconPng: BRAND_ASSET_PATHS.productionWebAppleTouchIconPng,
-  },
+  development: DOUDOU_CODE_WEB_ICON_PATHS,
+  nightly: DOUDOU_CODE_WEB_ICON_PATHS,
+  production: DOUDOU_CODE_WEB_ICON_PATHS,
 } as const satisfies Record<WebAssetBrand, Record<keyof typeof WEB_ICON_TARGET_FILENAMES, string>>;
 
 export function resolveWebIconOverrides(

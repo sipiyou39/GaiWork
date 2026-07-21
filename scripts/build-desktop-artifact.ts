@@ -265,15 +265,15 @@ export class UnsafeDesktopReleaseSourceError extends Schema.TaggedErrorClass<Uns
       const visibleEntries = this.dirtyEntries.slice(0, 5);
       const remainingCount = this.dirtyEntries.length - visibleEntries.length;
       const remainingSuffix = remainingCount > 0 ? `\n  … and ${remainingCount} more` : "";
-      return `Refusing to build a GaiWork Release from a dirty worktree. Commit or stash these changes first:\n  ${visibleEntries.join("\n  ")}${remainingSuffix}`;
+      return `Refusing to build a Doudou Code Release from a dirty worktree. Commit or stash these changes first:\n  ${visibleEntries.join("\n  ")}${remainingSuffix}`;
     }
 
     if (this.reason === "head-not-in-trusted-main") {
-      return `Refusing to build a GaiWork Release because HEAD is not contained in the trusted main ref '${this.trustedMainRef ?? REQUIRED_RELEASE_BRANCH}'.`;
+      return `Refusing to build a Doudou Code Release because HEAD is not contained in the trusted main ref '${this.trustedMainRef ?? REQUIRED_RELEASE_BRANCH}'.`;
     }
 
     const currentSource = this.currentBranch ? `branch '${this.currentBranch}'` : "a detached HEAD";
-    return `Refusing to build a GaiWork Release from ${currentSource}. Switch to '${REQUIRED_RELEASE_BRANCH}' first.`;
+    return `Refusing to build a Doudou Code Release from ${currentSource}. Switch to '${REQUIRED_RELEASE_BRANCH}' first.`;
   }
 }
 
@@ -699,7 +699,7 @@ interface StagePackageJson {
   readonly name: string;
   readonly version: string;
   readonly buildVersion: string;
-  readonly gaiworkCommitHash: string;
+  readonly doudouCodeCommitHash: string;
   readonly private: true;
   readonly packageManager: string;
   readonly description: string;
@@ -807,6 +807,21 @@ export const MacPasskeySigningConfigurationError = Schema.Union([
 ]);
 export type MacPasskeySigningConfigurationError = typeof MacPasskeySigningConfigurationError.Type;
 export const isMacPasskeySigningConfigurationError = Schema.is(MacPasskeySigningConfigurationError);
+
+const MAC_PASSKEY_CONFIGURATION_ENVIRONMENT_KEYS = [
+  "T3CODE_APPLE_TEAM_ID",
+  "T3CODE_MACOS_PROVISIONING_PROFILE",
+  "T3CODE_CLERK_PASSKEY_RP_DOMAINS",
+  "T3CODE_CLERK_PUBLISHABLE_KEY",
+] as const;
+
+export function hasMacPasskeySigningConfiguration(
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  return MAC_PASSKEY_CONFIGURATION_ENVIRONMENT_KEYS.some(
+    (key) => (env[key]?.trim().length ?? 0) > 0,
+  );
+}
 
 function normalizePasskeyRpDomain(value: string): string {
   const normalized = value.trim().toLowerCase();
@@ -1525,7 +1540,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     appId: PRODUCT_DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: `${PRODUCT_NAME}-${version}-\${arch}.\${ext}`,
+    artifactName: `${PRODUCT_NAME.replaceAll(" ", "-")}-${version}-\${arch}.\${ext}`,
     directories: {
       buildResources: "apps/desktop/resources",
     },
@@ -1838,10 +1853,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   // electron-builder is filtering out stageResourcesDir directory in the AppImage for production
   yield* fs.copy(stageResourcesDir, path.join(stageAppDir, "apps/desktop/prod-resources"));
 
+  const signingEnvironment =
+    options.platform === "mac" && options.signed ? loadRepoEnv({ repoRoot }) : undefined;
   const configuredMacPasskeySigning =
-    options.platform === "mac" && options.signed
+    signingEnvironment && hasMacPasskeySigningConfiguration(signingEnvironment)
       ? yield* Effect.try({
-          try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
+          try: () => resolveMacPasskeySigningConfiguration(signingEnvironment),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
         })
       : undefined;
@@ -1894,7 +1911,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     name: PRODUCT_SLUG,
     version: appVersion,
     buildVersion: appVersion,
-    gaiworkCommitHash: commitHash,
+    doudouCodeCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
     description: `${PRODUCT_NAME} desktop build`,

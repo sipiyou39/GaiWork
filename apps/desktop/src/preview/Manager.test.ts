@@ -61,8 +61,8 @@ vi.mock("electron", () => ({
 const browserSessionLayer = Layer.succeed(
   BrowserSession.BrowserSession,
   BrowserSession.BrowserSession.of({
-    getPartition: () => Effect.succeed("persist:gaiwork-preview-test"),
-    isPartition: (partition) => partition.startsWith("persist:gaiwork-preview-"),
+    getPartition: () => Effect.succeed("persist:doudou-code-preview-test"),
+    isPartition: (partition) => partition.startsWith("persist:doudou-code-preview-"),
     getSession: () => Effect.die("unexpected getSession"),
     clearCookies: () => Effect.void,
     clearCache: () => Effect.void,

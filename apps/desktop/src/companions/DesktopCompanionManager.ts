@@ -1029,7 +1029,7 @@ export const make = Effect.gen(function* () {
       session.expanded = false;
       session.cardSize = undefined;
     }
-    // Deactivate GaiWork before destroying its focused portal. Otherwise AppKit
+    // Deactivate Doudou Code before destroying its focused portal. Otherwise AppKit
     // promotes the main window (or detached DevTools) as the next key window.
     if (restoreApplicationFocus) restorePortalNativeFocus(portal);
     if (portal.window && !portal.window.isDestroyed()) portal.window.destroy();
@@ -1165,7 +1165,7 @@ export const make = Effect.gen(function* () {
     const session = previewSessionFor(projection);
     session.expanded = true;
     const token = NodeCrypto.randomUUID();
-    const frameName = `gaiwork-companion-${projection.companionId}-${token}`;
+    const frameName = `doudou-code-companion-${projection.companionId}-${token}`;
     const url = companionPortalUrl(environment.isDevelopment, token);
     const portal: CompanionPortalSession = {
       token,

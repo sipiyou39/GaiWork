@@ -1,5 +1,5 @@
 {
-  "name": "@gaiwork/monorepo",
+  "name": "@doudoucode/monorepo",
   "private": true,
   "type": "module",
   "scripts": {

@@ -167,8 +167,8 @@ describe("companion IPC contracts", () => {
     expect(
       decodePortalRequest({
         token: "portal-token",
-        frameName: "gaiwork-companion-blue-portal-token",
-        url: "gaiwork://app/companion-portal.html?token=portal-token",
+        frameName: "doudou-code-companion-blue-portal-token",
+        url: "doudou-code://app/companion-portal.html?token=portal-token",
         companionId: "blue",
         threadRef: { environmentId: "environment-test", threadId: "thread-test" },
         surface: "response-and-composer",
@@ -193,8 +193,8 @@ describe("companion IPC contracts", () => {
     expect(
       decodePortalRequest({
         token: "portal-token",
-        frameName: "gaiwork-companion-blue-portal-token",
-        url: "gaiwork://app/companion-portal.html?token=portal-token",
+        frameName: "doudou-code-companion-blue-portal-token",
+        url: "doudou-code://app/companion-portal.html?token=portal-token",
         companionId: "blue",
         threadRef: { environmentId: "environment-test", threadId: "thread-test" },
         surface: "composer-only",

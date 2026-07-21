@@ -108,7 +108,7 @@ export const resolveNightlyReleaseMetadata = (
     baseVersion,
     version,
     tag: `v${version}`,
-    name: `GaiWork Nightly ${version} (${shortSha})`,
+    name: `Doudou Code Nightly ${version} (${shortSha})`,
     shortSha,
   };
 };

@@ -1,5 +1,8 @@
 import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { PRODUCT_HOME_DIRECTORY } from "@t3tools/shared/productIdentity";
+import {
+  PRODUCT_HOME_DIRECTORY,
+  PRODUCT_LEGACY_HOME_DIRECTORIES,
+} from "@t3tools/shared/productIdentity";
 import {
   listLoginShellCandidates,
   mergePathEntries,
@@ -9,6 +12,7 @@ import {
 } from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as NodeOS from "node:os";
 
@@ -84,10 +88,24 @@ export const expandHomePath = Effect.fn(function* (input: string) {
   return input;
 });
 
-export const resolveBaseDir = Effect.fn(function* (raw: string | undefined) {
+export const resolveBaseDir = Effect.fn(function* (
+  raw: string | undefined,
+  homeDirectory = NodeOS.homedir(),
+) {
+  const fileSystem = yield* FileSystem.FileSystem;
   const { join, resolve } = yield* Path.Path;
   if (!raw || raw.trim().length === 0) {
-    return join(NodeOS.homedir(), PRODUCT_HOME_DIRECTORY);
+    const preferred = join(homeDirectory, PRODUCT_HOME_DIRECTORY);
+    const candidates = [
+      preferred,
+      ...PRODUCT_LEGACY_HOME_DIRECTORIES.map((directory) => join(homeDirectory, directory)),
+    ];
+    return Option.getOrElse(
+      yield* Effect.findFirst(candidates, (candidate) =>
+        fileSystem.exists(candidate).pipe(Effect.orElseSucceed(() => false)),
+      ),
+      () => preferred,
+    );
   }
   return resolve(yield* expandHomePath(raw.trim()));
 });

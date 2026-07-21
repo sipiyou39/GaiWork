@@ -245,7 +245,7 @@ export const ChatHeader = memo(function ChatHeader({
                   type="button"
                   className="no-drag-region inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/60 text-muted-foreground shadow-xs outline-hidden transition-[background-color,color,border-color,transform] hover:border-border hover:bg-accent hover:text-foreground active:scale-95 focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
                   aria-label={
-                    isConversationFocus ? "Open full GaiWork" : "Return to conversation focus"
+                    isConversationFocus ? "Open full Doudou Code" : "Return to conversation focus"
                   }
                   disabled={windowPresentationTransitioning}
                   onClick={() => {
@@ -261,7 +261,7 @@ export const ChatHeader = memo(function ChatHeader({
               }
             />
             <TooltipPopup side="bottom">
-              {isConversationFocus ? "Open full GaiWork" : "Return to conversation focus"}
+              {isConversationFocus ? "Open full Doudou Code" : "Return to conversation focus"}
             </TooltipPopup>
           </Tooltip>
         ) : null}

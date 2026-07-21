@@ -13,9 +13,9 @@ const defaultInput = {
   platform: "darwin",
   processArch: "arm64",
   appVersion: "0.0.22",
-  appPath: "/Applications/GaiWork.app/Contents/Resources/app.asar",
+  appPath: "/Applications/Doudou Code.app/Contents/Resources/app.asar",
   isPackaged: false,
-  resourcesPath: "/Applications/GaiWork.app/Contents/Resources",
+  resourcesPath: "/Applications/Doudou Code.app/Contents/Resources",
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
@@ -66,8 +66,8 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.appRoot, "/repo");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
       assert.equal(environment.backendCwd, "/repo");
-      assert.equal(environment.appUserModelId, "io.github.sipiyou39.gaiwork.dev");
-      assert.equal(environment.linuxWmClass, "gaiwork-dev");
+      assert.equal(environment.appUserModelId, "io.github.sipiyou39.doudoucode.dev");
+      assert.equal(environment.linuxWmClass, "doudou-code-dev");
       assert.deepEqual(
         Option.map(environment.devServerUrl, (url) => url.href),
         Option.some("http://localhost:5173/"),
@@ -97,19 +97,19 @@ describe("DesktopEnvironment", () => {
     }),
   );
 
-  it.effect("uses isolated GaiWork defaults when no compatibility override is configured", () =>
+  it.effect("uses isolated Doudou Code defaults when no compatibility override is configured", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment();
 
-      assert.equal(environment.baseDir, "/Users/alice/.gaiwork");
-      assert.equal(environment.stateDir, "/Users/alice/.gaiwork/userdata");
-      assert.equal(environment.userDataDirName, "gaiwork");
-      assert.equal(environment.legacyUserDataDirName, "GaiWork");
-      assert.equal(environment.appUserModelId, "io.github.sipiyou39.gaiwork");
-      assert.equal(environment.linuxDesktopEntryName, "gaiwork.desktop");
-      assert.equal(environment.linuxWmClass, "gaiwork");
-      assert.equal(environment.branding.baseName, "GaiWork");
-      assert.equal(environment.displayName, "GaiWork");
+      assert.equal(environment.baseDir, "/Users/alice/.doudou-code");
+      assert.equal(environment.stateDir, "/Users/alice/.doudou-code/userdata");
+      assert.equal(environment.userDataDirName, "doudou-code");
+      assert.deepEqual(environment.legacyUserDataDirNames, ["gaiwork", "GaiWork"]);
+      assert.equal(environment.appUserModelId, "io.github.sipiyou39.doudoucode");
+      assert.equal(environment.linuxDesktopEntryName, "doudou-code.desktop");
+      assert.equal(environment.linuxWmClass, "doudou-code");
+      assert.equal(environment.branding.baseName, "Doudou Code");
+      assert.equal(environment.displayName, "Doudou Code");
     }),
   );
 
@@ -118,12 +118,12 @@ describe("DesktopEnvironment", () => {
       const environment = yield* makeEnvironment(
         {},
         {
-          T3CODE_DESKTOP_APP_USER_MODEL_ID: " io.github.sipiyou39.gaiwork.dev.local ",
+          T3CODE_DESKTOP_APP_USER_MODEL_ID: " io.github.sipiyou39.doudoucode.dev.local ",
           VITE_DEV_SERVER_URL: "http://localhost:5173",
         },
       );
 
-      assert.equal(environment.appUserModelId, "io.github.sipiyou39.gaiwork.dev.local");
+      assert.equal(environment.appUserModelId, "io.github.sipiyou39.doudoucode.dev.local");
     }),
   );
 

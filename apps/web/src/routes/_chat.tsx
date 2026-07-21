@@ -93,7 +93,7 @@ function ChatRouteGlobalShortcuts() {
             stackedThreadToast({
               type: "info",
               title: "Preview is desktop-only",
-              description: "Open GaiWork in the desktop app to use the in-app preview.",
+              description: "Open Doudou Code in the desktop app to use the in-app preview.",
             }),
           );
           return;

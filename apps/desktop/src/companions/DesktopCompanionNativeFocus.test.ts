@@ -122,7 +122,7 @@ describe("desktop companion native focus", () => {
     assert.deepEqual(main.calls, ["main-hide"]);
   });
 
-  it("does not hide the main window when GaiWork already owns focus", () => {
+  it("does not hide the main window when Doudou Code already owns focus", () => {
     const main = mainWindowFixture();
     const origin = captureDesktopCompanionNativeFocusOrigin({
       application: { isFocused: () => true },
@@ -159,7 +159,7 @@ describe("desktop companion native focus", () => {
     assert.deepEqual(overlayCalls, ["overlay-show-inactive"]);
   });
 
-  it("does not reveal a GaiWork window when there are no companion overlays", () => {
+  it("does not reveal a Doudou Code window when there are no companion overlays", () => {
     const fixture = nativeFocusFixture();
     const scheduled: Array<() => void> = [];
     restoreDesktopCompanionPortalFocus({

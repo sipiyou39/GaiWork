@@ -16,7 +16,14 @@ const xcodePath = require.resolve("xcode", {
 const xcode = require(xcodePath);
 const { addWidgetAssetCatalog } = require("../plugins/lib/addWidgetAssetCatalog.cjs");
 
-const pbxprojPath = path.join(__dirname, "..", "ios", "T3CodeDev.xcodeproj", "project.pbxproj");
+const iosDirectory = path.join(__dirname, "..", "ios");
+const xcodeProject = fs
+  .readdirSync(iosDirectory, { withFileTypes: true })
+  .find((entry) => entry.isDirectory() && entry.name.endsWith(".xcodeproj"));
+if (!xcodeProject) {
+  throw new Error(`No Xcode project found in ${iosDirectory}. Run Expo prebuild first.`);
+}
+const pbxprojPath = path.join(iosDirectory, xcodeProject.name, "project.pbxproj");
 const proj = xcode.project(pbxprojPath);
 proj.parseSync();
 

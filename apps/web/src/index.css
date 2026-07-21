@@ -366,25 +366,25 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 :root {
   color-scheme: light;
   --radius: 0.625rem;
-  --background: var(--color-white);
-  --app-chrome-background: var(--background);
-  --foreground: var(--color-neutral-800);
-  --card: var(--color-white);
-  --card-foreground: var(--color-neutral-800);
-  --popover: var(--color-white);
-  --popover-foreground: var(--color-neutral-800);
-  --primary: oklch(0.488 0.217 264);
+  --background: #f8f6fc;
+  --app-chrome-background: #f3effa;
+  --foreground: #2c214a;
+  --card: #fefcff;
+  --card-foreground: #2c214a;
+  --popover: #ffffff;
+  --popover-foreground: #2c214a;
+  --primary: #7142c5;
   --primary-foreground: var(--color-white);
-  --secondary: --alpha(var(--color-black) / 4%);
-  --secondary-foreground: var(--color-neutral-800);
-  --muted: --alpha(var(--color-black) / 4%);
-  --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
-  --accent: --alpha(var(--color-black) / 4%);
-  --accent-foreground: var(--color-neutral-800);
+  --secondary: rgb(120 73 203 / 8%);
+  --secondary-foreground: #3c2a65;
+  --muted: #eee9f7;
+  --muted-foreground: #70657f;
+  --accent: #ebe3f8;
+  --accent-foreground: #3c2a65;
   --destructive: var(--color-red-500);
-  --border: --alpha(var(--color-black) / 8%);
-  --input: --alpha(var(--color-black) / 10%);
-  --ring: oklch(0.488 0.217 264);
+  --border: rgb(83 56 160 / 14%);
+  --input: rgb(83 56 160 / 18%);
+  --ring: #7849cb;
   --destructive-foreground: var(--color-red-700);
   --info: var(--color-blue-500);
   --info-foreground: var(--color-blue-700);
@@ -395,25 +395,25 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   @variant dark {
     color-scheme: dark;
-    --background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
-    --app-chrome-background: var(--background);
-    --foreground: var(--color-neutral-100);
-    --card: color-mix(in srgb, var(--background) 98%, var(--color-white));
-    --card-foreground: var(--color-neutral-100);
-    --popover: color-mix(in srgb, var(--background) 98%, var(--color-white));
-    --popover-foreground: var(--color-neutral-100);
-    --primary: oklch(0.588 0.217 264);
+    --background: #13111d;
+    --app-chrome-background: #0f0e19;
+    --foreground: #f3efff;
+    --card: #1c1829;
+    --card-foreground: #f3efff;
+    --popover: #211a32;
+    --popover-foreground: #f3efff;
+    --primary: #8a5cdd;
     --primary-foreground: var(--color-white);
-    --secondary: --alpha(var(--color-white) / 4%);
-    --secondary-foreground: var(--color-neutral-100);
-    --muted: --alpha(var(--color-white) / 4%);
-    --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
-    --accent: --alpha(var(--color-white) / 4%);
-    --accent-foreground: var(--color-neutral-100);
+    --secondary: rgb(164 129 238 / 10%);
+    --secondary-foreground: #eee8fb;
+    --muted: rgb(164 129 238 / 8%);
+    --muted-foreground: #a99ebc;
+    --accent: rgb(146 100 223 / 16%);
+    --accent-foreground: #f5f0ff;
     --destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
-    --border: --alpha(var(--color-white) / 6%);
-    --input: --alpha(var(--color-white) / 8%);
-    --ring: oklch(0.588 0.217 264);
+    --border: rgb(164 129 238 / 13%);
+    --input: rgb(164 129 238 / 18%);
+    --ring: #a481ee;
     --destructive-foreground: var(--color-red-400);
     --info: var(--color-blue-500);
     --info-foreground: var(--color-blue-400);
@@ -1116,7 +1116,7 @@ html[data-companion-portal="true"] [data-slot="dialog-viewport"] {
 .desktop-companion-composer-surface .chat-composer-glass {
   /* A portal floats over arbitrary applications, so the in-app frosted tint
      has no stable backing surface. Use the composer's own card color here to
-     preserve the exact readable GaiWork appearance without adding a wrapper. */
+     preserve the exact readable Doudou Code appearance without adding a wrapper. */
   background: var(--card);
   box-shadow:
     0 18px 42px -28px rgb(0 0 0 / 68%),

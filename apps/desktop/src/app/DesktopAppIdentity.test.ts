@@ -20,9 +20,9 @@ const defaultEnvironmentInput = {
   platform: "darwin",
   processArch: "arm64",
   appVersion: "1.2.3",
-  appPath: "/Applications/GaiWork.app/Contents/Resources/app.asar",
+  appPath: "/Applications/Doudou Code.app/Contents/Resources/app.asar",
   isPackaged: true,
-  resourcesPath: "/Applications/GaiWork.app/Contents/Resources",
+  resourcesPath: "/Applications/Doudou Code.app/Contents/Resources",
   runningUnderArm64Translation: false,
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
@@ -39,7 +39,7 @@ interface ElectronAppCalls {
 const makeElectronAppLayer = (calls: ElectronAppCalls) =>
   Layer.succeed(ElectronApp.ElectronApp, {
     metadata: Effect.die("unexpected metadata read"),
-    name: Effect.succeed("GaiWork"),
+    name: Effect.succeed("Doudou Code"),
     whenReady: Effect.void,
     quit: Effect.void,
     exit: () => Effect.void,
@@ -105,7 +105,7 @@ const withIdentity = <A, E, R>(
   input: {
     readonly calls?: ElectronAppCalls;
     readonly environment?: TestEnvironmentInput;
-    readonly legacyPathExists?: boolean;
+    readonly existingUserDataDirectories?: readonly string[];
     readonly legacyPathProbeError?: PlatformError.PlatformError;
     readonly packageJson?: string;
     readonly pngIconPath?: Option.Option<string>;
@@ -125,9 +125,13 @@ const withIdentity = <A, E, R>(
             exists: (path) =>
               input.legacyPathProbeError
                 ? Effect.fail(input.legacyPathProbeError)
-                : Effect.succeed(input.legacyPathExists === true && path.includes("GaiWork")),
+                : Effect.succeed(
+                    (input.existingUserDataDirectories ?? []).some((directory) =>
+                      path.endsWith(`/${directory}`),
+                    ),
+                  ),
             readFileString: () =>
-              Effect.succeed(input.packageJson ?? '{"gaiworkCommitHash":"abcdef1234567890"}'),
+              Effect.succeed(input.packageJson ?? '{"doudouCodeCommitHash":"abcdef1234567890"}'),
           }),
         ),
         Layer.provideMerge(makeAssetsLayer(input.pngIconPath ?? Option.none())),
@@ -139,20 +143,43 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
-  it.effect("keeps using the legacy userData path when it already exists", () =>
+  it.effect("keeps using the GaiWork userData path when it already exists", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/GaiWork");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/gaiwork");
       }),
-      { legacyPathExists: true },
+      { existingUserDataDirectories: ["gaiwork"] },
+    ),
+  );
+
+  it.effect("prefers the Doudou Code userData path once it exists", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const userDataPath = yield* identity.resolveUserDataPath;
+
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/doudou-code");
+      }),
+      { existingUserDataDirectories: ["doudou-code", "gaiwork"] },
+    ),
+  );
+
+  it.effect("uses the Doudou Code userData path for a new installation", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const userDataPath = yield* identity.resolveUserDataPath;
+
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/doudou-code");
+      }),
     ),
   );
 
   it.effect("preserves failures while inspecting the legacy userData path", () => {
-    const legacyPath = "/Users/alice/Library/Application Support/GaiWork";
+    const legacyPath = "/Users/alice/Library/Application Support/doudou-code";
     const cause = PlatformError.systemError({
       _tag: "PermissionDenied",
       module: "FileSystem",
@@ -190,8 +217,8 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         yield* identity.configure;
 
-        assert.deepEqual(calls.setName, ["GaiWork"]);
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "GaiWork");
+        assert.deepEqual(calls.setName, ["Doudou Code"]);
+        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "Doudou Code");
         assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
         assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
         assert.deepEqual(calls.setDockIcon, ["/icon.png"]);

@@ -1,25 +1,25 @@
-# GaiWork
+# Doudou Code
 
-GaiWork is a workflow-focused fork of [T3 Code](https://github.com/pingdotgg/t3code), a desktop and web interface for coding agents such as Codex, Claude, Cursor, and OpenCode.
+Doudou Code is a workflow-focused fork of [T3 Code](https://github.com/pingdotgg/t3code), a desktop and web interface for coding agents such as Codex, Claude, Cursor, and OpenCode.
 
-The first GaiWork milestone keeps the upstream architecture while giving the desktop app a fully separate runtime identity. It can therefore run beside T3 Code without reusing its application state, URL handlers, preview sessions, or update feed.
+The fork keeps a runtime identity that is fully isolated from upstream T3 Code, so both applications can run side by side without sharing application state, URL handlers, preview sessions, or update feeds.
 
 ## Runtime isolation
 
-| Surface              | GaiWork identity                                 |
-| -------------------- | ------------------------------------------------ |
-| Product name         | `GaiWork`                                        |
-| macOS/Windows app ID | `io.github.sipiyou39.gaiwork`                    |
-| App protocol         | `gaiwork://` (`gaiwork-dev://` in development)   |
-| Desktop data         | `~/Library/Application Support/gaiwork` on macOS |
-| Backend state        | `~/.gaiwork`                                     |
-| Preview partitions   | `persist:gaiwork-preview-*`                      |
-| MCP browser server   | `gaiwork`                                        |
-| Update repository    | `sipiyou39/GaiWork`                              |
+| Surface              | Doudou Code identity                                   |
+| -------------------- | ------------------------------------------------------ |
+| Product name         | `Doudou Code`                                          |
+| macOS/Windows app ID | `io.github.sipiyou39.doudoucode`                       |
+| App protocol         | `doudou-code://` (`doudou-code-dev://` in development) |
+| Desktop data         | `~/Library/Application Support/doudou-code` on macOS   |
+| Backend state        | `~/.doudou-code`                                       |
+| Preview partitions   | `persist:doudou-code-preview-*`                        |
+| MCP browser server   | `doudou-code`                                          |
+| Update repository    | `sipiyou39/GaiWork`                                    |
 
-Internal `@t3tools/*` package names and `T3CODE_*` environment variables are intentionally retained for now. They do not identify an installed desktop application, and keeping them limits conflicts when syncing future upstream changes.
+Existing `.gaiwork` and GaiWork Application Support directories are read as compatibility fallbacks, so the final identity change does not hide conversations, settings, or companion positions. Fresh installations create only Doudou Code paths. Internal `@t3tools/*` package names and `T3CODE_*` environment-variable aliases remain source-compatible with upstream; they are implementation APIs rather than runtime product identity.
 
-Provider authentication remains shared unless you configure a separate provider home. For example, GaiWork can reuse an existing Codex login while keeping all GaiWork UI, backend, preview, and desktop preferences separate from T3 Code.
+Provider authentication remains shared unless you configure a separate provider home. For example, Doudou Code can reuse an existing Codex login while keeping all Doudou Code UI, backend, preview, and desktop preferences separate from T3 Code.
 
 ## Development
 
@@ -42,27 +42,26 @@ pnpm install --frozen-lockfile
 pnpm run dev:desktop
 ```
 
-The development app appears as `GaiWork (Dev)` and uses its own bundle ID, protocol, state directories, and Dock icon.
+The development app appears as `Doudou Code (Dev)` and uses its own bundle ID suffix, protocol, state directories, and Dock icon.
 
 ### Verification
 
 ```bash
 pnpm exec vp check
 pnpm exec vp run typecheck
-pnpm exec vp run test
+pnpm exec vp test
 pnpm exec vp run build:desktop
 ```
 
-### Build a macOS artifact
+### Build a local macOS artifact
 
 ```bash
 pnpm run dist:desktop:dmg:arm64
 ```
 
-Release packaging refuses to run unless the current branch is `main` and the worktree is clean.
-GitHub release builds may use a detached checkout, but its commit must belong to `origin/main`.
+Release packaging refuses to run unless the current branch is `main` and the worktree is clean. GitHub release builds may use a detached checkout, but its commit must belong to `origin/main`.
 
-Local artifacts are unsigned by default. Signing and notarization require credentials and a provisioning profile issued for `io.github.sipiyou39.gaiwork`; the original T3 Code signing identity must not be reused.
+Local artifacts are unsigned by default. Public macOS releases use the signed and notarized workflow documented in [Release and automatic updates](./docs/operations/release.md).
 
 ## Providers
 
@@ -83,4 +82,4 @@ The upstream documentation remains applicable to the shared architecture:
 - [Operations](./docs/operations/ci.md)
 - [Reference](./docs/reference/encyclopedia.md)
 
-GaiWork retains the upstream MIT license. See [LICENSE](./LICENSE).
+Doudou Code retains the upstream MIT license. See [LICENSE](./LICENSE).

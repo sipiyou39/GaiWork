@@ -35,7 +35,7 @@ describe("ElectronProtocol", () => {
         Effect.gen(function* () {
           const protocol = yield* ElectronProtocol.ElectronProtocol;
           yield* protocol.registerDesktopProtocol({
-            scheme: "gaiwork-dev",
+            scheme: "doudou-code-dev",
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             backendOrigin: new URL("http://127.0.0.1:3774/"),
             clerkFrontendApiHostname: "clerk.t3.codes",
@@ -44,11 +44,11 @@ describe("ElectronProtocol", () => {
 
           const response = yield* Effect.promise(() =>
             handler!(
-              new Request("gaiwork-dev://app/api/health?verbose=1", {
+              new Request("doudou-code-dev://app/api/health?verbose=1", {
                 headers: {
                   accept: "application/json",
-                  origin: "gaiwork-dev://app",
-                  referer: "gaiwork-dev://app/",
+                  origin: "doudou-code-dev://app",
+                  referer: "doudou-code-dev://app/",
                   "sec-fetch-site": "same-origin",
                 },
               }),
@@ -65,18 +65,18 @@ describe("ElectronProtocol", () => {
           );
           assert.include(
             response.headers.get("content-security-policy") ?? "",
-            "img-src 'self' gaiwork-dev: blob: data: http: https:",
+            "img-src 'self' doudou-code-dev: blob: data: http: https:",
           );
           assert.include(
             response.headers.get("content-security-policy") ?? "",
-            "font-src 'self' gaiwork-dev: data:",
+            "font-src 'self' doudou-code-dev: data:",
           );
         }),
       );
 
       assert.deepEqual(
         handleMock.mock.calls.map((call) => call[0]),
-        ["gaiwork-dev"],
+        ["doudou-code-dev"],
       );
       assert.equal(netFetchMock.mock.calls[0]?.[0], "http://127.0.0.1:3773/api/health?verbose=1");
       const forwardedHeaders = new Headers(netFetchMock.mock.calls[0]?.[1]?.headers);
@@ -84,7 +84,7 @@ describe("ElectronProtocol", () => {
       assert.isNull(forwardedHeaders.get("origin"));
       assert.isNull(forwardedHeaders.get("referer"));
       assert.isNull(forwardedHeaders.get("sec-fetch-site"));
-      assert.deepEqual(unhandleMock.mock.calls, [["gaiwork-dev"]]);
+      assert.deepEqual(unhandleMock.mock.calls, [["doudou-code-dev"]]);
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
@@ -99,12 +99,12 @@ describe("ElectronProtocol", () => {
         Effect.gen(function* () {
           const protocol = yield* ElectronProtocol.ElectronProtocol;
           yield* protocol.registerDesktopProtocol({
-            scheme: "gaiwork",
+            scheme: "doudou-code",
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             backendOrigin: new URL("http://127.0.0.1:3773/"),
             clerkFrontendApiHostname: undefined,
           });
-          return yield* Effect.promise(() => handler!(new Request("gaiwork://other/")));
+          return yield* Effect.promise(() => handler!(new Request("doudou-code://other/")));
         }),
       );
 
@@ -127,12 +127,12 @@ describe("ElectronProtocol", () => {
         Effect.gen(function* () {
           const protocol = yield* ElectronProtocol.ElectronProtocol;
           yield* protocol.registerDesktopProtocol({
-            scheme: "gaiwork-dev",
+            scheme: "doudou-code-dev",
             targetOrigin: new URL("http://127.0.0.1:5733/"),
             backendOrigin: new URL("http://127.0.0.1:3773/"),
             clerkFrontendApiHostname: undefined,
           });
-          return yield* Effect.promise(() => handler!(new Request("gaiwork-dev://app/")));
+          return yield* Effect.promise(() => handler!(new Request("doudou-code-dev://app/")));
         }),
       );
 
@@ -151,7 +151,7 @@ describe("ElectronProtocol", () => {
       const protocol = yield* ElectronProtocol.ElectronProtocol;
       const error = yield* Effect.scoped(
         protocol.registerDesktopProtocol({
-          scheme: "gaiwork-dev",
+          scheme: "doudou-code-dev",
           targetOrigin: new URL("http://127.0.0.1:3773/"),
           backendOrigin: new URL("http://127.0.0.1:3774/"),
           clerkFrontendApiHostname: undefined,
@@ -159,9 +159,9 @@ describe("ElectronProtocol", () => {
       ).pipe(Effect.flip);
 
       assert.instanceOf(error, ElectronProtocol.ElectronProtocolRegistrationError);
-      assert.equal(error.scheme, "gaiwork-dev");
+      assert.equal(error.scheme, "doudou-code-dev");
       assert.strictEqual(error.cause, cause);
-      assert.equal(error.message, 'Failed to register Electron protocol scheme "gaiwork-dev".');
+      assert.equal(error.message, 'Failed to register Electron protocol scheme "doudou-code-dev".');
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
@@ -176,7 +176,7 @@ describe("ElectronProtocol", () => {
       const exit = yield* Effect.exit(
         Effect.scoped(
           protocol.registerDesktopProtocol({
-            scheme: "gaiwork",
+            scheme: "doudou-code",
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             backendOrigin: new URL("http://127.0.0.1:3773/"),
             clerkFrontendApiHostname: undefined,
@@ -188,16 +188,16 @@ describe("ElectronProtocol", () => {
       if (exit._tag === "Failure") {
         const error = Cause.squash(exit.cause);
         assert.instanceOf(error, ElectronProtocol.ElectronProtocolUnregistrationError);
-        assert.equal(error.scheme, "gaiwork");
+        assert.equal(error.scheme, "doudou-code");
         assert.strictEqual(error.cause, cause);
-        assert.equal(error.message, 'Failed to unregister Electron protocol scheme "gaiwork".');
+        assert.equal(error.message, 'Failed to unregister Electron protocol scheme "doudou-code".');
       }
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
   it("keeps executable sources host-restricted while allowing runtime network resources", () => {
     const policy = ElectronProtocol.makeDesktopContentSecurityPolicy({
-      scheme: "gaiwork",
+      scheme: "doudou-code",
       targetOrigin: new URL("http://127.0.0.1:3773/"),
       backendOrigin: new URL("http://127.0.0.1:3773/"),
       clerkFrontendApiHostname: "clerk.t3.codes",
@@ -218,12 +218,12 @@ describe("ElectronProtocol", () => {
     assert.deepEqual(directives["connect-src"], ["'self'", "http:", "https:", "ws:", "wss:"]);
     assert.deepEqual(directives["img-src"], [
       "'self'",
-      "gaiwork:",
+      "doudou-code:",
       "blob:",
       "data:",
       "http:",
       "https:",
     ]);
-    assert.deepEqual(directives["font-src"], ["'self'", "gaiwork:", "data:"]);
+    assert.deepEqual(directives["font-src"], ["'self'", "doudou-code:", "data:"]);
   });
 });

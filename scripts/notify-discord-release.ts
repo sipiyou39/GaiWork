@@ -137,8 +137,8 @@ export const buildDiscordReleaseAnnouncement = (
       url: options.releaseUrl.href,
       description:
         options.target === "prerelease"
-          ? "A new GaiWork prerelease is available for nightly testers."
-          : "A new GaiWork latest release is available.",
+          ? "A new Doudou Code prerelease is available for nightly testers."
+          : "A new Doudou Code latest release is available.",
       color: targetColors[options.target],
       fields: [
         {
@@ -278,7 +278,7 @@ export const notifyDiscordReleaseCommand = Command.make(
       yield* postDiscordWebhook(webhookUrl, payload, announcement);
       yield* Effect.logInfo("discord release announcement completed");
     }),
-).pipe(Command.withDescription("Post a GaiWork release announcement to Discord."));
+).pipe(Command.withDescription("Post a Doudou Code release announcement to Discord."));
 
 if (import.meta.main) {
   Command.run(notifyDiscordReleaseCommand, { version: "0.0.0" }).pipe(

@@ -66,7 +66,7 @@ describe("DesktopClerk", () => {
           {
             storage: storageAdapter,
             passkeys: true,
-            renderer: { scheme: "gaiwork-dev", host: "app" },
+            renderer: { scheme: "doudou-code-dev", host: "app" },
           },
         ],
       ]);
@@ -125,8 +125,8 @@ describe("DesktopClerk", () => {
   });
 
   it.each([
-    { isDevelopment: true, scheme: "gaiwork-dev" },
-    { isDevelopment: false, scheme: "gaiwork" },
+    { isDevelopment: true, scheme: "doudou-code-dev" },
+    { isDevelopment: false, scheme: "doudou-code" },
   ])("configures the SDK with the $scheme renderer origin", ({ isDevelopment, scheme }) => {
     const bridge = { cleanup: vi.fn() };
     storageMock.mockReturnValue(storageAdapter);

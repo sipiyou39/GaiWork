@@ -599,7 +599,7 @@ export const DesktopPreviewPointerEventSchema: Schema.Codec<DesktopPreviewPointe
  * can attach.
  */
 export interface DesktopPreviewWebviewConfig {
-  /** `persist:gaiwork-preview` (or whatever the desktop chose). */
+  /** `persist:doudou-code-preview` (or whatever the desktop chose). */
   partition: string;
   /**
    * Canonical `<webview webpreferences="...">` string. Encodes the security

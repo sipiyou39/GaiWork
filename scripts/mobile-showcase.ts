@@ -31,14 +31,14 @@ import {
 
 const REPO_ROOT = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const MOBILE_ROOT = NodePath.join(REPO_ROOT, "apps/mobile");
-const ANDROID_PACKAGE = "com.t3tools.t3code.dev";
-const APP_SCHEME = "t3code-dev";
+const ANDROID_PACKAGE = "io.github.sipiyou39.doudoucode.dev";
+const APP_SCHEME = "doudou-code-dev";
 const IOS_READY_FILENAME = "T3ShowcaseReadyScene";
 const SERVER_HOST = "0.0.0.0";
 const IOS_SIMULATOR_ARCH = NodeProcess.arch === "arm64" ? "arm64" : "x86_64";
 const IOS_APP_PATH = NodePath.join(
   MOBILE_ROOT,
-  ".showcase/ios-derived-data/Build/Products/Debug-iphonesimulator/T3CodeDev.app",
+  ".showcase/ios-derived-data/Build/Products/Debug-iphonesimulator/DoudouCodeDev.app",
 );
 const ANDROID_APK_PATH = NodePath.join(
   MOBILE_ROOT,
@@ -664,9 +664,9 @@ async function buildIos(): Promise<string> {
     "xcodebuild",
     [
       "-workspace",
-      NodePath.join(MOBILE_ROOT, "ios/T3CodeDev.xcworkspace"),
+      NodePath.join(MOBILE_ROOT, "ios/DoudouCodeDev.xcworkspace"),
       "-scheme",
-      "T3CodeDev",
+      "DoudouCodeDev",
       "-configuration",
       "Debug",
       "-sdk",

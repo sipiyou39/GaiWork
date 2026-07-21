@@ -379,7 +379,7 @@ export const RootStack = createNativeStackNavigator({
         contentStyle: { backgroundColor: "transparent" },
         headerBackVisible: false,
         headerTitle: renderCompactBrandTitle,
-        title: "T3 Code",
+        title: "Doudou Code",
       },
     }),
     Thread: createNativeStackScreen({

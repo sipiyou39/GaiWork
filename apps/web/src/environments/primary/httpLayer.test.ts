@@ -41,7 +41,7 @@ describe.sequential("primary environment HTTP layer", () => {
     Object.defineProperty(globalThis, "window", {
       configurable: true,
       value: {
-        location: { origin: "gaiwork://app" },
+        location: { origin: "doudou-code://app" },
         desktopBridge: {
           getLocalEnvironmentBootstrap: () => ({
             label: "Local environment",

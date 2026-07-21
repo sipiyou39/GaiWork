@@ -1070,7 +1070,7 @@ export function makeOpenCodeAdapter(
               }
               const openCodeSession = yield* runOpenCodeSdk("session.create", () =>
                 client.session.create({
-                  title: `GaiWork ${input.threadId}`,
+                  title: `Doudou Code ${input.threadId}`,
                   permission: buildOpenCodePermissionRules(input.runtimeMode),
                 }),
               );

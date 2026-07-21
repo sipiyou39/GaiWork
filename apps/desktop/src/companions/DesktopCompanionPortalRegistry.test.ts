@@ -9,8 +9,8 @@ import {
   resetDesktopCompanionPortalRegistry,
 } from "./DesktopCompanionPortalRegistry.ts";
 
-const portalUrl = "gaiwork://app/companion-portal.html?token=portal-token";
-const frameName = "gaiwork-companion-blue-portal-token";
+const portalUrl = "doudou-code://app/companion-portal.html?token=portal-token";
+const frameName = "doudou-code-companion-blue-portal-token";
 const fakeWindow = {} as Electron.BrowserWindow;
 
 afterEach(() => resetDesktopCompanionPortalRegistry());
@@ -23,13 +23,13 @@ describe("desktop companion portal authorization", () => {
       url: portalUrl,
       frameName,
       bounds: { x: 0, y: 0, width: 1_440, height: 900 },
-      title: "GaiWork — Companion composer",
+      title: "Doudou Code — Companion composer",
       onCreated,
     });
 
     expect(
       authorizeDesktopCompanionPortalWindow({
-        url: "gaiwork://app/companion-portal.html?token=attacker",
+        url: "doudou-code://app/companion-portal.html?token=attacker",
         frameName,
       }),
     ).toBeNull();
@@ -40,7 +40,7 @@ describe("desktop companion portal authorization", () => {
 
     expect(
       attachDesktopCompanionPortalWindow({
-        url: "gaiwork://app/companion-portal.html?token=portal-token",
+        url: "doudou-code://app/companion-portal.html?token=portal-token",
         window: fakeWindow,
       }),
     ).toBe(true);
@@ -54,7 +54,7 @@ describe("desktop companion portal authorization", () => {
       url: portalUrl,
       frameName,
       bounds: { x: 0, y: 0, width: 1_440, height: 900 },
-      title: "GaiWork — Companion composer",
+      title: "Doudou Code — Companion composer",
       onCreated: vi.fn(),
     });
 

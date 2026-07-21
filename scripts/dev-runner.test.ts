@@ -1,10 +1,10 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeOS from "node:os";
 import * as NetService from "@t3tools/shared/Net";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { assert, describe, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
@@ -127,9 +127,13 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
   });
 
   describe("createDevRunnerEnv", () => {
-    it.effect("defaults T3CODE_HOME to ~/.gaiwork when not provided", () =>
+    it.effect("defaults T3CODE_HOME to the Doudou Code home when not provided", () =>
       Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
+        const homeDirectory = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "doudou-code-dev-runner-home-",
+        });
         const env = yield* createDevRunnerEnv({
           mode: "dev",
           baseEnv: {},
@@ -142,9 +146,39 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           host: undefined,
           port: undefined,
           devUrl: undefined,
+          homeDirectory,
         });
 
-        assert.equal(env.T3CODE_HOME, path.resolve(NodeOS.homedir(), ".gaiwork"));
+        assert.equal(env.T3CODE_HOME, path.resolve(homeDirectory, ".doudou-code"));
+      }),
+    );
+
+    it.effect("reuses an existing GaiWork home during the identity migration", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const homeDirectory = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "doudou-code-dev-runner-legacy-home-",
+        });
+        const legacyHome = path.join(homeDirectory, ".gaiwork");
+        yield* fileSystem.makeDirectory(legacyHome);
+
+        const env = yield* createDevRunnerEnv({
+          mode: "dev",
+          baseEnv: {},
+          serverOffset: 0,
+          webOffset: 0,
+          t3Home: undefined,
+          noBrowser: undefined,
+          autoBootstrapProjectFromCwd: undefined,
+          logWebSocketEvents: undefined,
+          host: undefined,
+          port: undefined,
+          devUrl: undefined,
+          homeDirectory,
+        });
+
+        assert.equal(env.T3CODE_HOME, legacyHome);
       }),
     );
 

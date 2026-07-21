@@ -67,7 +67,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
         environment: resolvedEnvironment,
         childProcessSpawner: commandSpawner,
         cwd,
-        clientInfo: { name: "gaiwork-git-text", version: "0.0.0" },
+        clientInfo: { name: "doudou-code-git-text", version: "0.0.0" },
       }).pipe(Effect.provideService(Crypto.Crypto, crypto));
 
       yield* runtime.handleSessionUpdate((notification) => {

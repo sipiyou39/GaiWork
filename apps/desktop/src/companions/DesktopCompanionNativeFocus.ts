@@ -49,7 +49,7 @@ export function captureDesktopCompanionNativeFocusOrigin(input: {
   };
 }
 
-/** Keeps the main GaiWork window out of the foreground while its desktop composer owns focus. */
+/** Keeps the main Doudou Code window out of the foreground while its desktop composer owns focus. */
 export function prepareDesktopCompanionPortalFocus(input: {
   readonly mainWindow: Pick<
     DesktopCompanionNativeMainWindow,
@@ -69,7 +69,7 @@ export function prepareDesktopCompanionPortalFocus(input: {
 }
 
 /**
- * Deactivates GaiWork after a desktop reply and brings back only its passive
+ * Deactivates Doudou Code after a desktop reply and brings back only its passive
  * companion overlays. The main window deliberately stays hidden: revealing it
  * is reserved for an explicit companion or Dock click.
  *

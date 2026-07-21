@@ -74,7 +74,7 @@ function ensureRelayClientAvailable(
     if (status.status === "available") return;
     if (status.status === "unsupported") {
       return yield* new CloudEnvironmentLinkError({
-        message: `GaiWork cannot install the relay client automatically on ${status.platform}-${status.arch}.`,
+        message: `Doudou Code cannot install the relay client automatically on ${status.platform}-${status.arch}.`,
       });
     }
 
@@ -110,7 +110,7 @@ function ensureRelayClientAvailable(
       return yield* new CloudEnvironmentLinkError({
         message:
           installedStatus.status === "unsupported"
-            ? `GaiWork cannot install the relay client automatically on ${installedStatus.platform}-${installedStatus.arch}.`
+            ? `Doudou Code cannot install the relay client automatically on ${installedStatus.platform}-${installedStatus.arch}.`
             : "The relay client is still unavailable after installation.",
       });
     }

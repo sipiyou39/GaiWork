@@ -6,10 +6,15 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
 import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
-import { PRODUCT_HOME_DIRECTORY, PRODUCT_NAME } from "@t3tools/shared/productIdentity";
+import {
+  PRODUCT_HOME_DIRECTORY,
+  PRODUCT_LEGACY_HOME_DIRECTORIES,
+  PRODUCT_NAME,
+} from "@t3tools/shared/productIdentity";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Hash from "effect/Hash";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
@@ -203,8 +208,12 @@ export function resolveOffset(config: {
   return Effect.succeed({ offset, source: `hashed T3CODE_DEV_INSTANCE=${seed}` });
 }
 
-function resolveBaseDir(baseDir: string | undefined): Effect.Effect<string, never, Path.Path> {
+function resolveBaseDir(
+  baseDir: string | undefined,
+  homeDirectory = NodeOS.homedir(),
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> {
   return Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const configured = baseDir?.trim();
 
@@ -212,7 +221,17 @@ function resolveBaseDir(baseDir: string | undefined): Effect.Effect<string, neve
       return path.resolve(configured);
     }
 
-    return yield* DEFAULT_T3_HOME;
+    const preferred = path.join(homeDirectory, PRODUCT_HOME_DIRECTORY);
+    const candidates = [
+      preferred,
+      ...PRODUCT_LEGACY_HOME_DIRECTORIES.map((directory) => path.join(homeDirectory, directory)),
+    ];
+    return Option.getOrElse(
+      yield* Effect.findFirst(candidates, (candidate) =>
+        fileSystem.exists(candidate).pipe(Effect.orElseSucceed(() => false)),
+      ),
+      () => preferred,
+    );
   });
 }
 
@@ -228,6 +247,7 @@ interface CreateDevRunnerEnvInput {
   readonly host: string | undefined;
   readonly port: number | undefined;
   readonly devUrl: URL | undefined;
+  readonly homeDirectory?: string;
 }
 
 export function createDevRunnerEnv({
@@ -242,11 +262,16 @@ export function createDevRunnerEnv({
   host,
   port,
   devUrl,
-}: CreateDevRunnerEnvInput): Effect.Effect<NodeJS.ProcessEnv, never, Path.Path> {
+  homeDirectory,
+}: CreateDevRunnerEnvInput): Effect.Effect<
+  NodeJS.ProcessEnv,
+  never,
+  FileSystem.FileSystem | Path.Path
+> {
   return Effect.gen(function* () {
     const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
     const webPort = BASE_WEB_PORT + webOffset;
-    const resolvedBaseDir = yield* resolveBaseDir(t3Home);
+    const resolvedBaseDir = yield* resolveBaseDir(t3Home, homeDirectory);
     const isDesktopMode = mode === "dev:desktop";
 
     const output: NodeJS.ProcessEnv = {

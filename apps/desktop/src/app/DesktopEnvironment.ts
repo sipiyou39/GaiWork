@@ -7,18 +7,23 @@ import type {
 import {
   PRODUCT_DESKTOP_APP_ID,
   PRODUCT_DESKTOP_DEVELOPMENT_APP_ID,
+  PRODUCT_DESKTOP_LEGACY_DEVELOPMENT_USER_DATA_DIRECTORIES,
+  PRODUCT_DESKTOP_LEGACY_USER_DATA_DIRECTORIES,
   PRODUCT_DESKTOP_DEVELOPMENT_USER_DATA_DIRECTORY,
   PRODUCT_DESKTOP_USER_DATA_DIRECTORY,
   PRODUCT_HOME_DIRECTORY,
+  PRODUCT_LEGACY_HOME_DIRECTORIES,
   PRODUCT_NAME,
   PRODUCT_SLUG,
 } from "@t3tools/shared/productIdentity";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
@@ -78,7 +83,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly linuxDesktopEntryName: string;
     readonly linuxWmClass: string;
     readonly userDataDirName: string;
-    readonly legacyUserDataDirName: string;
+    readonly legacyUserDataDirNames: readonly string[];
     readonly defaultDesktopSettings: DesktopAppSettings.DesktopSettings;
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
@@ -142,8 +147,13 @@ function resolveDesktopRuntimeInfo(input: {
 
 const make = Effect.fn("desktop.environment.make")(function* (
   input: MakeDesktopEnvironmentInput,
-): Effect.fn.Return<DesktopEnvironment["Service"], Config.ConfigError, Path.Path> {
+): Effect.fn.Return<
+  DesktopEnvironment["Service"],
+  Config.ConfigError | PlatformError.PlatformError,
+  FileSystem.FileSystem | Path.Path
+> {
   const path = yield* Path.Path;
+  const fileSystem = yield* FileSystem.FileSystem;
   const config = yield* DesktopConfig.DesktopConfig;
   const homeDirectory = input.homeDirectory;
   const devServerUrl = config.devServerUrl;
@@ -156,9 +166,17 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
-  const baseDir = Option.getOrElse(config.t3Home, () =>
-    path.join(homeDirectory, PRODUCT_HOME_DIRECTORY),
-  );
+  const preferredBaseDir = path.join(homeDirectory, PRODUCT_HOME_DIRECTORY);
+  const compatibleBaseDirectories = [
+    preferredBaseDir,
+    ...PRODUCT_LEGACY_HOME_DIRECTORIES.map((directory) => path.join(homeDirectory, directory)),
+  ];
+  const baseDir = Option.isSome(config.t3Home)
+    ? config.t3Home.value
+    : Option.getOrElse(
+        yield* Effect.findFirst(compatibleBaseDirectories, fileSystem.exists),
+        () => preferredBaseDir,
+      );
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
   const branding = resolveDesktopAppBranding({
@@ -170,7 +188,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const userDataDirName = isDevelopment
     ? PRODUCT_DESKTOP_DEVELOPMENT_USER_DATA_DIRECTORY
     : PRODUCT_DESKTOP_USER_DATA_DIRECTORY;
-  const legacyUserDataDirName = isDevelopment ? `${PRODUCT_NAME} (Dev)` : PRODUCT_NAME;
+  const legacyUserDataDirNames = isDevelopment
+    ? PRODUCT_DESKTOP_LEGACY_DEVELOPMENT_USER_DATA_DIRECTORIES
+    : PRODUCT_DESKTOP_LEGACY_USER_DATA_DIRECTORIES;
   const resourcesPath = input.resourcesPath;
 
   return DesktopEnvironment.of({
@@ -219,7 +239,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : `${PRODUCT_SLUG}.desktop`,
     linuxWmClass: isDevelopment ? PRODUCT_DESKTOP_DEVELOPMENT_USER_DATA_DIRECTORY : PRODUCT_SLUG,
     userDataDirName,
-    legacyUserDataDirName,
+    legacyUserDataDirNames,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,
@@ -257,7 +277,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
       path.join(resourcesPath, "resources", fileName),
       path.join(resourcesPath, fileName),
     ],
-    developmentDockIconPath: path.join(rootDir, "assets", "dev", "blueprint-macos-1024.png"),
+    developmentDockIconPath: path.join(rootDir, "assets", "doudou-code", "app-icon-macos-1024.png"),
   });
 });
 

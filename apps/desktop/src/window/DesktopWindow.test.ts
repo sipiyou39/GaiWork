@@ -29,7 +29,7 @@ vi.mock("electron", async (importOriginal) => ({
   },
   session: {
     fromPartition: vi.fn(() => ({
-      getUserAgent: vi.fn(() => "Mozilla/5.0 Electron/41.5.0 gaiwork/1.2.3"),
+      getUserAgent: vi.fn(() => "Mozilla/5.0 Electron/41.5.0 doudou-code/1.2.3"),
       setPermissionRequestHandler: vi.fn(),
       setUserAgent: vi.fn(),
     })),
@@ -72,7 +72,7 @@ function makeFakeBrowserWindow() {
   const webContents = {
     id: 17,
     copyImageAt: vi.fn(),
-    getURL: vi.fn(() => "gaiwork-dev://app/"),
+    getURL: vi.fn(() => "doudou-code-dev://app/"),
     isLoadingMainFrame: vi.fn(() => false),
     on: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
       webContentsListeners.set(eventName, listener);
@@ -274,8 +274,8 @@ function makeTestLayer(input: {
         Layer.mock(PreviewManager.PreviewManager)({
           getBrowserSession: () => Effect.succeed({} as Electron.Session),
           setMainWindow: () => Effect.void,
-          isBrowserPartition: (partition) => partition.startsWith("persist:gaiwork-preview-"),
-          getBrowserPartition: () => Effect.succeed("persist:gaiwork-preview-test"),
+          isBrowserPartition: (partition) => partition.startsWith("persist:doudou-code-preview-"),
+          getBrowserPartition: () => Effect.succeed("persist:doudou-code-preview-test"),
         }),
       ),
     ),
@@ -367,8 +367,8 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
           Layer.mock(PreviewManager.PreviewManager)({
             getBrowserSession: () => Effect.succeed({} as Electron.Session),
             setMainWindow: () => Effect.void,
-            isBrowserPartition: (partition) => partition.startsWith("persist:gaiwork-preview-"),
-            getBrowserPartition: () => Effect.succeed("persist:gaiwork-preview-test"),
+            isBrowserPartition: (partition) => partition.startsWith("persist:doudou-code-preview-"),
+            getBrowserPartition: () => Effect.succeed("persist:doudou-code-preview-test"),
           }),
         ),
       ),
@@ -381,19 +381,19 @@ describe("DesktopWindow", () => {
   it("recognizes only same-origin renderer navigations", () => {
     assert.isTrue(
       DesktopWindow.isSameOriginRendererNavigation({
-        applicationUrl: "gaiwork://app/",
-        navigationUrl: "gaiwork://app/settings/connections",
+        applicationUrl: "doudou-code://app/",
+        navigationUrl: "doudou-code://app/settings/connections",
       }),
     );
     assert.isFalse(
       DesktopWindow.isSameOriginRendererNavigation({
-        applicationUrl: "gaiwork://app/",
+        applicationUrl: "doudou-code://app/",
         navigationUrl: "https://accounts.microsoft.com/oauth",
       }),
     );
     assert.isFalse(
       DesktopWindow.isSameOriginRendererNavigation({
-        applicationUrl: "gaiwork://app/",
+        applicationUrl: "doudou-code://app/",
         navigationUrl: "not a url",
       }),
     );
@@ -421,7 +421,7 @@ describe("DesktopWindow", () => {
         assert.equal(yield* Ref.get(createCount), 1);
         assert.isTrue(createdWindowOptions[0]?.disableAutoHideCursor);
         assert.deepEqual(fakeWindow.setAutoHideCursor.mock.calls, [[false]]);
-        assert.deepEqual(fakeWindow.loadURL.mock.calls[0], ["gaiwork-dev://app/"]);
+        assert.deepEqual(fakeWindow.loadURL.mock.calls[0], ["doudou-code-dev://app/"]);
         assert.equal(fakeWindow.openDevTools.mock.calls.length, 1);
       }).pipe(Effect.provide(layer));
     }),
@@ -479,7 +479,7 @@ describe("DesktopWindow", () => {
 
         assert.equal(yield* Ref.get(createCount), 1);
         assert.equal(Option.getOrThrow(yield* Ref.get(mainWindow)), originalWindow);
-        assert.deepEqual(fakeWindow.loadURL.mock.calls, [["gaiwork-dev://app/"]]);
+        assert.deepEqual(fakeWindow.loadURL.mock.calls, [["doudou-code-dev://app/"]]);
         assert.deepEqual(fakeWindow.setBounds.mock.calls, []);
         assert.deepEqual(fakeWindow.send.mock.calls, [
           [COMPANION_NAVIGATE_THREAD_CHANNEL, { threadRef: first, presentation: "workspace" }],
@@ -609,17 +609,17 @@ describe("DesktopWindow", () => {
           return yield* Effect.die("renderer load listeners were not registered");
         }
 
-        didFailLoad({}, -9, "ERR_UNEXPECTED", "gaiwork-dev://app/", true);
+        didFailLoad({}, -9, "ERR_UNEXPECTED", "doudou-code-dev://app/", true);
         assert.equal(fakeWindow.loadURL.mock.calls.length, 1);
 
         yield* TestClock.adjust(100);
         assert.deepEqual(fakeWindow.loadURL.mock.calls, [
-          ["gaiwork-dev://app/"],
-          ["gaiwork-dev://app/"],
+          ["doudou-code-dev://app/"],
+          ["doudou-code-dev://app/"],
         ]);
         assert.equal(fakeWindow.reload.mock.calls.length, 0);
 
-        didFailLoad({}, -9, "ERR_UNEXPECTED", "gaiwork-dev://app/", true);
+        didFailLoad({}, -9, "ERR_UNEXPECTED", "doudou-code-dev://app/", true);
         didFinishLoad();
         yield* TestClock.adjust(250);
         assert.equal(fakeWindow.loadURL.mock.calls.length, 2);
@@ -631,23 +631,23 @@ describe("DesktopWindow", () => {
   it("retries only transient failures for the development renderer", () => {
     assert.isTrue(
       DesktopWindow.isRetryableDevelopmentRendererLoadFailure({
-        applicationUrl: "gaiwork-dev://app/",
+        applicationUrl: "doudou-code-dev://app/",
         errorCode: -102,
         isMainFrame: true,
-        validatedUrl: "gaiwork-dev://app/",
+        validatedUrl: "doudou-code-dev://app/",
       }),
     );
     assert.isFalse(
       DesktopWindow.isRetryableDevelopmentRendererLoadFailure({
-        applicationUrl: "gaiwork-dev://app/",
+        applicationUrl: "doudou-code-dev://app/",
         errorCode: -3,
         isMainFrame: true,
-        validatedUrl: "gaiwork-dev://app/",
+        validatedUrl: "doudou-code-dev://app/",
       }),
     );
     assert.isFalse(
       DesktopWindow.isRetryableDevelopmentRendererLoadFailure({
-        applicationUrl: "gaiwork-dev://app/",
+        applicationUrl: "doudou-code-dev://app/",
         errorCode: -102,
         isMainFrame: true,
         validatedUrl: "https://example.com/",

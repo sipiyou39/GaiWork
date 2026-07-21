@@ -40,7 +40,7 @@ const connectUnavailableCommand = Command.make("connect").pipe(
 
 export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
   Command.make("t3", { ...sharedServerCommandFlags }).pipe(
-    Command.withDescription("Run the GaiWork server."),
+    Command.withDescription("Run the Doudou Code server."),
     Command.withHandler((flags) => runServerCommand(flags)),
     Command.withSubcommands([
       startCommand,

@@ -39,7 +39,8 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     return {
       headline: "Disabled",
       detail:
-        provider.message ?? "This provider is installed but disabled for new sessions in GaiWork.",
+        provider.message ??
+        "This provider is installed but disabled for new sessions in Doudou Code.",
     };
   }
   if (!provider.installed) {

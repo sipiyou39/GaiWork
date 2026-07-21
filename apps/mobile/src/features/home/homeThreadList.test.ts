@@ -70,7 +70,7 @@ describe("buildHomeThreadGroups", () => {
     const project = makeProject({
       environmentId,
       id: ProjectId.make("project-1"),
-      title: "T3 Code",
+      title: "Doudou Code",
     });
     const threads = [
       makeThread({
@@ -189,7 +189,7 @@ describe("buildHomeThreadGroups", () => {
       provider: "github",
       owner: "t3tools",
       name: "t3code",
-      displayName: "T3 Code",
+      displayName: "Doudou Code",
       rootPath: "/workspaces/t3code",
     };
     const projects = [
@@ -229,7 +229,7 @@ describe("buildHomeThreadGroups", () => {
     const project = makeProject({
       environmentId,
       id: ProjectId.make("project-1"),
-      title: "T3 Code",
+      title: "Doudou Code",
     });
     const threads = [
       makeThread({
@@ -267,7 +267,7 @@ describe("buildHomeThreadGroups", () => {
     const project = makeProject({
       environmentId,
       id: ProjectId.make("project-1"),
-      title: "T3 Code",
+      title: "Doudou Code",
     });
     const threads = ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05"].map(
       (day, index) =>
@@ -294,7 +294,7 @@ describe("buildHomeThreadGroups", () => {
     const project = makeProject({
       environmentId,
       id: ProjectId.make("project-1"),
-      title: "T3 Code",
+      title: "Doudou Code",
     });
     const threads = ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05"].map(
       (day, index) =>
@@ -307,7 +307,7 @@ describe("buildHomeThreadGroups", () => {
         }),
     );
 
-    const group = buildGroups([project], threads, { searchQuery: "T3 Code" })[0];
+    const group = buildGroups([project], threads, { searchQuery: "Doudou Code" })[0];
     // Search reaches the full history rather than the 3-thread fallback.
     expect(group?.recentThreads).toHaveLength(5);
     expect(group?.recentThreads.map((thread) => thread.id)).toEqual(

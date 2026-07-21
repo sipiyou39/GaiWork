@@ -6,14 +6,20 @@
   - If changing native mobile code, `vp run lint:mobile` must also pass.
 - Use `vp test` for the built-in Vite+ test command and `vp run test` when you specifically need the `test` package script.
 
+## Stable Releases and Updates
+
+When the user asks to "deploy an update", publish a release, create the friends' DMG, or change a release version, read `update/README.md` and every document it marks as required before changing versions, creating tags, or triggering GitHub Actions. The `update/` directory is the canonical Doudou Code release runbook.
+
+Never publish from a dirty worktree, a branch other than `main`, or before the user has explicitly approved the dev build for that release. Never reuse, move, or overwrite a published version tag.
+
 ## Project Snapshot
 
-GaiWork is a workflow-focused fork of T3 Code, a minimal web GUI for using coding agents like Codex
+Doudou Code is a workflow-focused fork of T3 Code, a minimal web GUI for using coding agents like Codex
 and Claude.
 
 Keep the fork's runtime identity isolated through `@t3tools/shared/productIdentity`. Do not
 reintroduce the upstream desktop bundle IDs, URL schemes, state directories, preview partitions,
-MCP server name, or update repository into GaiWork defaults.
+MCP server name, or update repository into Doudou Code defaults.
 
 This repository is a VERY EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged.
 

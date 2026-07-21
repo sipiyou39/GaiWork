@@ -1,4 +1,4 @@
-# GaiWork companion assets
+# Doudou Code companion assets
 
 The experimental `experiment/companions` branch contains nine runtime companion atlases under
 `apps/web/public/companions`. Each identity ships only its WebP spritesheet and animation manifest;

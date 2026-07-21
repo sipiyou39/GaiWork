@@ -274,7 +274,7 @@ export function CompanionSettingsPanel() {
         />
       </SettingsSection>
 
-      <SettingsSection title="Inside GaiWork">
+      <SettingsSection title="Inside Doudou Code">
         <SettingsRow
           title="Sidebar size"
           description="Adjust companion size in conversation rows. Larger companions increase the row height automatically."

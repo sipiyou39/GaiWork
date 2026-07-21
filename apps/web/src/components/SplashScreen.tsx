@@ -1,8 +1,11 @@
 export function SplashScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="flex size-24 items-center justify-center" aria-label="GaiWork splash screen">
-        <img alt="GaiWork" className="size-16 object-contain" src="/apple-touch-icon.png" />
+      <div
+        className="flex size-24 items-center justify-center"
+        aria-label="Doudou Code splash screen"
+      >
+        <img alt="Doudou Code" className="size-16 object-contain" src="/apple-touch-icon.png" />
       </div>
     </div>
   );

@@ -91,7 +91,7 @@ describe("desktop window presentation geometry", () => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "gaiwork-window-presentation-test-",
+        prefix: "doudou-code-window-presentation-test-",
       });
       const presentationPath = `${baseDir}/userdata/window-presentation.json`;
       yield* fileSystem.makeDirectory(`${baseDir}/userdata`, { recursive: true });

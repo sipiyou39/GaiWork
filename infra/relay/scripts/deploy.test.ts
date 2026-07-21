@@ -199,8 +199,8 @@ describe("serializeRelayClientTracingEnvironment", () => {
   });
 });
 
-describe("release workflow tracing config propagation", () => {
-  it.effect("uses an artifact instead of a masked cross-job token output", () =>
+describe("desktop release workflow isolation", () => {
+  it.effect("does not require the upstream relay deployment to publish Doudou Code", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -209,11 +209,12 @@ describe("release workflow tracing config propagation", () => {
       );
       const workflow = yield* fileSystem.readFileString(workflowPath);
 
-      expect(workflow).not.toContain("client_tracing_token:");
-      expect(workflow).not.toContain("needs.relay_public_config.outputs.client_tracing_token");
-      expect(workflow).toContain('--github-env-file "$RUNNER_TEMP/relay-client-tracing.env"');
-      expect(workflow).toContain("name: relay-client-tracing-config");
-      expect(workflow).toContain('cat "$config_path" >> "$GITHUB_ENV"');
+      expect(workflow).not.toContain("relay_public_config");
+      expect(workflow).not.toContain("CLOUDFLARE_API_TOKEN");
+      expect(workflow).not.toContain("VERCEL_TOKEN");
+      expect(workflow).toContain("T3CODE_DESKTOP_UPDATE_REPOSITORY: sipiyou39/GaiWork");
+      expect(workflow).toContain("CSC_LINK: ${{ secrets.CSC_LINK }}");
+      expect(workflow).toContain("APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

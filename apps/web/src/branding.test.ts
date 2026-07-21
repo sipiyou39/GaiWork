@@ -24,9 +24,9 @@ describe("branding", () => {
       value: {
         desktopBridge: {
           getAppBranding: () => ({
-            baseName: "GaiWork",
+            baseName: "Doudou Code",
             stageLabel: "Nightly",
-            displayName: "GaiWork (Nightly)",
+            displayName: "Doudou Code (Nightly)",
           }),
         },
       },
@@ -34,9 +34,9 @@ describe("branding", () => {
 
     const branding = await import("./branding");
 
-    expect(branding.APP_BASE_NAME).toBe("GaiWork");
+    expect(branding.APP_BASE_NAME).toBe("Doudou Code");
     expect(branding.APP_STAGE_LABEL).toBe("Nightly");
-    expect(branding.APP_DISPLAY_NAME).toBe("GaiWork (Nightly)");
+    expect(branding.APP_DISPLAY_NAME).toBe("Doudou Code (Nightly)");
   });
 
   it("normalizes hosted app channel metadata", async () => {
@@ -47,7 +47,7 @@ describe("branding", () => {
     expect(branding.HOSTED_APP_CHANNEL).toBe("nightly");
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBe("Nightly");
     expect(branding.APP_STAGE_LABEL).toBe("Nightly");
-    expect(branding.APP_DISPLAY_NAME).toBe("GaiWork (Nightly)");
+    expect(branding.APP_DISPLAY_NAME).toBe("Doudou Code (Nightly)");
   });
 
   it("ignores unknown hosted app channels", async () => {
@@ -73,33 +73,33 @@ describe("branding logic", () => {
   it("updates the display name for nightly primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
-        baseName: "GaiWork",
-        fallbackDisplayName: "GaiWork",
+        baseName: "Doudou Code",
+        fallbackDisplayName: "Doudou Code",
         fallbackStageLabel: "Alpha",
         primaryServerVersion: "0.0.28-nightly.20260616.12",
       }),
-    ).toBe("GaiWork (Nightly)");
+    ).toBe("Doudou Code (Nightly)");
   });
 
   it("keeps the fallback display name for stable primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
-        baseName: "GaiWork",
-        fallbackDisplayName: "GaiWork",
+        baseName: "Doudou Code",
+        fallbackDisplayName: "Doudou Code",
         fallbackStageLabel: "Alpha",
         primaryServerVersion: "0.0.27",
       }),
-    ).toBe("GaiWork");
+    ).toBe("Doudou Code");
   });
 
   it("keeps the fallback display name for malformed nightly primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
-        baseName: "GaiWork",
-        fallbackDisplayName: "GaiWork",
+        baseName: "Doudou Code",
+        fallbackDisplayName: "Doudou Code",
         fallbackStageLabel: "Alpha",
         primaryServerVersion: "0.0.28-nightly.20260616",
       }),
-    ).toBe("GaiWork");
+    ).toBe("Doudou Code");
   });
 });

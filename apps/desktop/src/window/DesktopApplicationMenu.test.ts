@@ -30,7 +30,7 @@ const environmentInput = {
 
 const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
   metadata: Effect.die("unexpected metadata read"),
-  name: Effect.succeed("GaiWork"),
+  name: Effect.succeed("Doudou Code"),
   whenReady: Effect.void,
   quit: Effect.void,
   exit: () => Effect.void,

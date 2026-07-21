@@ -14,6 +14,7 @@ const COMMIT_HASH_PATTERN = /^[0-9a-f]{7,40}$/i;
 const COMMIT_HASH_DISPLAY_LENGTH = 12;
 
 const AppPackageMetadata = Schema.Struct({
+  doudouCodeCommitHash: Schema.optional(Schema.String),
   gaiworkCommitHash: Schema.optional(Schema.String),
 });
 const decodeAppPackageMetadata = Schema.decodeEffect(Schema.fromJsonString(AppPackageMetadata));
@@ -60,7 +61,7 @@ export const make = Effect.gen(function* () {
       onSome: (value) =>
         decodeAppPackageMetadata(value).pipe(
           Effect.map((parsed) =>
-            Option.fromNullishOr(parsed.gaiworkCommitHash).pipe(
+            Option.fromNullishOr(parsed.doudouCodeCommitHash ?? parsed.gaiworkCommitHash).pipe(
               Option.flatMap(normalizeCommitHash),
             ),
           ),
@@ -93,22 +94,28 @@ export const make = Effect.gen(function* () {
   });
 
   const resolveUserDataPath = Effect.gen(function* () {
-    const legacyPath = environment.path.join(
+    const preferredPath = environment.path.join(
       environment.appDataDirectory,
-      environment.legacyUserDataDirName,
+      environment.userDataDirName,
     );
-    const legacyPathExists = yield* fileSystem.exists(legacyPath).pipe(
-      Effect.mapError(
-        (cause) =>
-          new DesktopUserDataPathResolutionError({
-            legacyPath,
-            cause,
-          }),
+    const candidates = [
+      preferredPath,
+      ...environment.legacyUserDataDirNames.map((directory) =>
+        environment.path.join(environment.appDataDirectory, directory),
+      ),
+    ];
+    const existingPath = yield* Effect.findFirst(candidates, (candidate) =>
+      fileSystem.exists(candidate).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopUserDataPathResolutionError({
+              legacyPath: candidate,
+              cause,
+            }),
+        ),
       ),
     );
-    return legacyPathExists
-      ? legacyPath
-      : environment.path.join(environment.appDataDirectory, environment.userDataDirName);
+    return Option.getOrElse(existingPath, () => preferredPath);
   }).pipe(Effect.withSpan("desktop.appIdentity.resolveUserDataPath"));
 
   const configure = Effect.gen(function* () {
