@@ -127,6 +127,17 @@ export class ServerSettingsService extends Context.Service<
 
     /** Stream of settings change events. */
     readonly streamChanges: Stream.Stream<ServerSettings>;
+
+    /**
+     * Acquire the settings change subscription synchronously in the caller's
+     * scope. Consumers that fork their processing loop must use this surface
+     * so a settings update cannot land before the forked stream subscribes.
+     */
+    readonly subscribeChanges: Effect.Effect<
+      PubSub.Subscription<ServerSettings>,
+      never,
+      Scope.Scope
+    >;
   }
 >()("t3/serverSettings/ServerSettingsService") {
   /** @deprecated Import and use `layerTest` from this module. */
@@ -144,6 +155,8 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
         : {}),
     });
     const currentSettingsRef = yield* Ref.make<ServerSettings>(initialSettings);
+    const changes = yield* PubSub.unbounded<ServerSettings>();
+    yield* Effect.addFinalizer(() => PubSub.shutdown(changes));
 
     return {
       start: Effect.void,
@@ -154,8 +167,14 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
           Effect.map((currentSettings) => applyServerSettingsPatch(currentSettings, patch)),
           Effect.flatMap(normalizeServerSettings),
           Effect.tap((nextSettings) => Ref.set(currentSettingsRef, nextSettings)),
+          Effect.tap((nextSettings) => PubSub.publish(changes, nextSettings)),
         ),
-      streamChanges: Stream.empty,
+      get streamChanges() {
+        return Stream.fromPubSub(changes);
+      },
+      get subscribeChanges() {
+        return PubSub.subscribe(changes);
+      },
     } satisfies ServerSettingsService["Service"];
   });
 
@@ -595,6 +614,9 @@ const make = Effect.gen(function* () {
         ),
         Stream.map(resolveTextGenerationProvider),
       );
+    },
+    get subscribeChanges() {
+      return PubSub.subscribe(changesPubSub);
     },
   } satisfies ServerSettingsService["Service"];
 });

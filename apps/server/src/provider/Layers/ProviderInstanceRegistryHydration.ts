@@ -49,7 +49,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Stream from "effect/Stream";
+import * as PubSub from "effect/PubSub";
 
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { BUILT_IN_DRIVERS, type BuiltInDriversEnv } from "../builtInDrivers.ts";
@@ -118,18 +118,17 @@ const SettingsWatcherLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const mutator = yield* ProviderInstanceRegistryMutator;
     const serverSettings = yield* ServerSettingsService;
-    yield* serverSettings.streamChanges.pipe(
-      Stream.runForEach((next) =>
-        mutator
-          .reconcile(deriveProviderInstanceConfigMap(next))
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
-            ),
-          ),
+    const settingsChanges = yield* serverSettings.subscribeChanges;
+    const reconcileLatest = Effect.gen(function* () {
+      yield* PubSub.take(settingsChanges);
+      const next = yield* serverSettings.getSettings;
+      yield* mutator.reconcile(deriveProviderInstanceConfigMap(next));
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
       ),
-      Effect.forkScoped,
     );
+    yield* Effect.forever(reconcileLatest).pipe(Effect.forkScoped);
   }),
 );
 
