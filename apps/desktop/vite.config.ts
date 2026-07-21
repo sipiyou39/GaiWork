@@ -4,10 +4,13 @@ import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
 const repoEnv = loadRepoEnv();
 const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
+const isDevelopmentBuild =
+  shouldLaunchElectronAfterPack || process.env.T3CODE_DESKTOP_BUILD_MODE === "development";
 const publicConfigDefine = {
   __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
     repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
   ),
+  __T3CODE_BUILD_IS_DEVELOPMENT__: JSON.stringify(isDevelopmentBuild),
 };
 
 export default defineConfig({
@@ -25,7 +28,8 @@ export default defineConfig({
         cache: false,
       },
       "dev:bundle": {
-        command: "node scripts/build-preview-annotation-css.mjs && vp pack --watch",
+        command:
+          "node scripts/build-preview-annotation-css.mjs && cross-env T3CODE_DESKTOP_BUILD_MODE=development vp pack --watch",
         cache: false,
       },
       "dev:electron": {

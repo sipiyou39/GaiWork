@@ -56,6 +56,10 @@ import * as DesktopCompanionManager from "./companions/DesktopCompanionManager.t
 import * as DesktopCompanionPositions from "./companions/DesktopCompanionPositions.ts";
 import * as DesktopWindowPresentationStore from "./window/DesktopWindowPresentationStore.ts";
 
+const preReadyDesktopClerkBridge = DesktopClerk.initializeDesktopClerkBridgeBeforeReady(
+  DesktopClerk.desktopClerkBuildIsDevelopment,
+);
+
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
     const metadata = yield* Effect.service(ElectronApp.ElectronApp).pipe(
@@ -190,7 +194,7 @@ const desktopApplicationLayer = Layer.mergeAll(
   Layer.provideMerge(desktopLocalEnvironmentAuthLayer),
 );
 
-const desktopClerkLayer = DesktopClerk.layer.pipe(
+const desktopClerkLayer = DesktopClerk.layer(preReadyDesktopClerkBridge).pipe(
   Layer.provideMerge(desktopEnvironmentLayer),
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(ElectronApp.layer),

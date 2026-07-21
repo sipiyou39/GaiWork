@@ -30,8 +30,9 @@ const makeDesktopClerkLayer = (isDevelopment = true) => {
     stateDir: "/tmp/t3-state",
     isDevelopment,
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
+  const preReadyBridge = DesktopClerk.initializeDesktopClerkBridgeBeforeReady(isDevelopment);
 
-  return DesktopClerk.layer.pipe(
+  return DesktopClerk.layer(preReadyBridge).pipe(
     Layer.provide(Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment)),
   );
 };
@@ -64,22 +65,24 @@ describe("DesktopClerk", () => {
       assert.deepEqual(createClerkBridgeMock.mock.calls, [
         [
           {
-            storage: storageAdapter,
+            storage: createClerkBridgeMock.mock.calls[0]?.[0].storage,
             passkeys: true,
             renderer: { scheme: "doudou-code-dev", host: "app" },
           },
         ],
       ]);
+      assert.deepEqual(storageMock.mock.calls, [[{ path: "/tmp/t3-state" }]]);
       assert.equal(cleanup.mock.calls.length, 1);
       storageMock.mockClear();
       createClerkBridgeMock.mockClear();
     });
   });
 
-  it.effect("preserves bridge initialization failures", () => {
+  it.effect("preserves token storage initialization failures", () => {
     const cause = new Error("bridge initialization failed");
-    storageMock.mockReturnValue(storageAdapter);
-    createClerkBridgeMock.mockImplementationOnce(() => {
+    const cleanup = vi.fn();
+    createClerkBridgeMock.mockReturnValue({ cleanup });
+    storageMock.mockImplementationOnce(() => {
       throw cause;
     });
 
@@ -94,7 +97,26 @@ describe("DesktopClerk", () => {
         error.message,
         'Failed to initialize the desktop Clerk bridge for state directory "/tmp/t3-state" (development: true).',
       );
+      assert.equal(cleanup.mock.calls.length, 1);
     });
+  });
+
+  it("preserves synchronous pre-ready bridge initialization failures", () => {
+    const cause = new Error("bridge initialization failed");
+    createClerkBridgeMock.mockImplementationOnce(() => {
+      throw cause;
+    });
+
+    let failure: unknown;
+    try {
+      DesktopClerk.initializeDesktopClerkBridgeBeforeReady(false);
+    } catch (error) {
+      failure = error;
+    }
+
+    assert.instanceOf(failure, DesktopClerk.DesktopClerkPreReadyInitializationError);
+    assert.equal(failure.isDevelopment, false);
+    assert.strictEqual(failure.cause, cause);
   });
 
   it.effect("preserves bridge cleanup failures", () => {
@@ -127,23 +149,28 @@ describe("DesktopClerk", () => {
   it.each([
     { isDevelopment: true, scheme: "doudou-code-dev" },
     { isDevelopment: false, scheme: "doudou-code" },
-  ])("configures the SDK with the $scheme renderer origin", ({ isDevelopment, scheme }) => {
-    const bridge = { cleanup: vi.fn() };
-    storageMock.mockReturnValue(storageAdapter);
-    createClerkBridgeMock.mockReturnValue(bridge);
+  ])(
+    "configures the SDK before ready with the $scheme renderer origin",
+    ({ isDevelopment, scheme }) => {
+      const bridge = { cleanup: vi.fn() };
+      createClerkBridgeMock.mockReturnValue(bridge);
 
-    assert.equal(DesktopClerk.createDesktopClerkBridge("/tmp/t3-state", isDevelopment), bridge);
-    assert.deepEqual(storageMock.mock.calls, [[{ path: "/tmp/t3-state" }]]);
-    assert.deepEqual(createClerkBridgeMock.mock.calls, [
-      [
-        {
-          storage: storageAdapter,
-          passkeys: true,
-          renderer: { scheme, host: "app" },
-        },
-      ],
-    ]);
-    storageMock.mockClear();
-    createClerkBridgeMock.mockClear();
-  });
+      const initialized = DesktopClerk.initializeDesktopClerkBridgeBeforeReady(isDevelopment);
+
+      assert.equal(initialized.bridge, bridge);
+      assert.equal(initialized.isDevelopment, isDevelopment);
+      assert.equal(storageMock.mock.calls.length, 0);
+      assert.deepEqual(createClerkBridgeMock.mock.calls, [
+        [
+          {
+            storage: createClerkBridgeMock.mock.calls[0]?.[0].storage,
+            passkeys: true,
+            renderer: { scheme, host: "app" },
+          },
+        ],
+      ]);
+      storageMock.mockClear();
+      createClerkBridgeMock.mockClear();
+    },
+  );
 });
