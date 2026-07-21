@@ -9,11 +9,7 @@ import {
   suspendDesktopCompanionDevTools,
 } from "./DesktopCompanionNativeFocus.ts";
 
-function nativeFocusFixture(input?: {
-  readonly destroyed?: boolean;
-  readonly focused?: boolean;
-  readonly visible?: boolean;
-}) {
+function nativeFocusFixture(input?: { readonly destroyed?: boolean; readonly visible?: boolean }) {
   const calls: string[] = [];
   const application = {
     focus: (options?: { readonly steal: boolean }) => {
@@ -28,7 +24,6 @@ function nativeFocusFixture(input?: {
       focus: () => calls.push("web-contents"),
     },
     isDestroyed: () => input?.destroyed ?? false,
-    isFocused: () => input?.focused ?? false,
     isVisible: () => input?.visible ?? false,
     setFocusable: (focusable: boolean) => calls.push(`focusable:${String(focusable)}`),
     show: () => calls.push("show"),
@@ -97,8 +92,8 @@ describe("desktop companion native focus", () => {
     assert.deepEqual(fixture.calls, []);
   });
 
-  it("does not reactivate macOS when the portal already owns native focus", () => {
-    const fixture = nativeFocusFixture({ focused: true, visible: true });
+  it("reasserts macOS application activation on every native portal focus request", () => {
+    const fixture = nativeFocusFixture({ visible: true });
 
     assert.isTrue(
       focusDesktopCompanionPortalWindow({
@@ -106,7 +101,22 @@ describe("desktop companion native focus", () => {
         platform: "darwin",
       }),
     );
-    assert.deepEqual(fixture.calls, ["focusable:true", "window", "web-contents"]);
+    assert.isTrue(
+      focusDesktopCompanionPortalWindow({
+        ...fixture,
+        platform: "darwin",
+      }),
+    );
+    assert.deepEqual(fixture.calls, [
+      "focusable:true",
+      "application:true",
+      "window",
+      "web-contents",
+      "focusable:true",
+      "application:true",
+      "window",
+      "web-contents",
+    ]);
   });
 
   it("captures and temporarily hides a background main window on macOS", () => {

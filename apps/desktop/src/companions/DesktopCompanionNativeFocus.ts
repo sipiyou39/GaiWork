@@ -11,7 +11,6 @@ export interface DesktopCompanionNativeFocusWindow {
     readonly focus: () => void;
   };
   readonly isDestroyed: () => boolean;
-  readonly isFocused: () => boolean;
   readonly isVisible: () => boolean;
   readonly setFocusable: (focusable: boolean) => void;
   readonly show: () => void;
@@ -135,10 +134,12 @@ export function focusDesktopCompanionPortalWindow(input: {
 }): boolean {
   if (input.window.isDestroyed()) return false;
 
-  const wasAlreadyFocused = input.window.isFocused();
   input.window.setFocusable(true);
   if (!input.window.isVisible()) input.window.show();
-  if (input.platform === "darwin" && !wasAlreadyFocused) {
+  // `BrowserWindow.isFocused()` only reports that the NSPanel is key. A
+  // non-activating panel can be key while another process remains the macOS
+  // AXFocusedApplication, so activation must never be skipped on that basis.
+  if (input.platform === "darwin") {
     input.application.focus({ steal: true });
   }
   input.window.focus();
