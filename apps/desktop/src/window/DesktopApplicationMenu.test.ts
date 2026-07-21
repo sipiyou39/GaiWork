@@ -78,6 +78,12 @@ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
     handleBackendNotReady: Effect.void,
     dispatchMenuAction: (action) => Deferred.succeed(selectedAction, action).pipe(Effect.asVoid),
     navigateToThread: () => Effect.die("unexpected navigateToThread"),
+    openCompanionConversation: () => Effect.die("unexpected openCompanionConversation"),
+    showWorkspace: Effect.die("unexpected showWorkspace"),
+    showConversationFocus: Effect.die("unexpected showConversationFocus"),
+    getPresentation: Effect.succeed({ mode: "workspace", transitionId: 0 }),
+    requestPresentation: () => Effect.die("unexpected requestPresentation"),
+    acknowledgePresentation: () => Effect.void,
     syncAppearance: Effect.void,
   } satisfies DesktopWindow.DesktopWindow["Service"]);
 

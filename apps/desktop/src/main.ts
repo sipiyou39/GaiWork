@@ -54,6 +54,7 @@ import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 import * as DesktopCompanionManager from "./companions/DesktopCompanionManager.ts";
 import * as DesktopCompanionPositions from "./companions/DesktopCompanionPositions.ts";
+import * as DesktopWindowPresentationStore from "./window/DesktopWindowPresentationStore.ts";
 
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
@@ -124,6 +125,7 @@ const desktopFoundationLayer = Layer.mergeAll(
   DesktopAppSettings.layer,
   DesktopClientSettings.layer,
   DesktopCompanionPositions.layer,
+  DesktopWindowPresentationStore.layer,
   DesktopConnectionCatalogStore.layer.pipe(Layer.provideMerge(DesktopSavedEnvironments.layer)),
   DesktopAssets.layer,
   DesktopObservability.layer,

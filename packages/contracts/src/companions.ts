@@ -204,6 +204,29 @@ export const MainWindowAttentionState = Schema.Struct({
 });
 export type MainWindowAttentionState = typeof MainWindowAttentionState.Type;
 
+export const MAIN_WINDOW_PRESENTATION_MODES = ["workspace", "conversation-focus"] as const;
+export const MainWindowPresentationMode = Schema.Literals(MAIN_WINDOW_PRESENTATION_MODES);
+export type MainWindowPresentationMode = typeof MainWindowPresentationMode.Type;
+
+export const MainWindowPresentationSnapshot = Schema.Struct({
+  mode: MainWindowPresentationMode,
+  transitionId: NonNegativeInt,
+});
+export type MainWindowPresentationSnapshot = typeof MainWindowPresentationSnapshot.Type;
+
+export const MainWindowPresentationAcknowledgement = Schema.Struct({
+  mode: MainWindowPresentationMode,
+  transitionId: NonNegativeInt,
+});
+export type MainWindowPresentationAcknowledgement =
+  typeof MainWindowPresentationAcknowledgement.Type;
+
+export const CompanionConversationNavigation = Schema.Struct({
+  threadRef: ScopedThreadRef,
+  presentation: Schema.Literal("conversation-focus"),
+});
+export type CompanionConversationNavigation = typeof CompanionConversationNavigation.Type;
+
 export const CompanionPointerEvent = Schema.Struct({
   phase: Schema.Literals(["down", "move", "up", "cancel"]),
   target: Schema.Literals(["companion", "preview", "toggle", "composer", "visibility-control"]),

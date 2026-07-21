@@ -8,6 +8,11 @@ export const GET_WINDOW_FULLSCREEN_STATE_CHANNEL = "desktop:get-window-fullscree
 export const WINDOW_FULLSCREEN_STATE_CHANNEL = "desktop:window-fullscreen-state";
 export const GET_MAIN_WINDOW_ATTENTION_STATE_CHANNEL = "desktop:get-main-window-attention-state";
 export const MAIN_WINDOW_ATTENTION_STATE_CHANNEL = "desktop:main-window-attention-state";
+export const GET_MAIN_WINDOW_PRESENTATION_CHANNEL = "desktop:get-main-window-presentation";
+export const REQUEST_MAIN_WINDOW_PRESENTATION_CHANNEL = "desktop:request-main-window-presentation";
+export const ACKNOWLEDGE_MAIN_WINDOW_PRESENTATION_CHANNEL =
+  "desktop:acknowledge-main-window-presentation";
+export const MAIN_WINDOW_PRESENTATION_CHANNEL = "desktop:main-window-presentation";
 export const COMPANION_SYNC_PROJECTION_CHANNEL = "desktop:companions-sync-projection";
 export const COMPANION_RESET_POSITIONS_CHANNEL = "desktop:companions-reset-positions";
 export const COMPANION_NAVIGATE_THREAD_CHANNEL = "desktop:companions-navigate-thread";

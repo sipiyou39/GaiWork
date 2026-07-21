@@ -104,6 +104,7 @@ import { EditorId } from "./editor.ts";
 import { ExecutionEnvironmentDescriptor, type ScopedThreadRef } from "./environment.ts";
 import type {
   CompanionPointerEvent,
+  CompanionConversationNavigation,
   CompanionProjectionSnapshot,
   DesktopCompanionOverlayPresentation,
   DesktopCompanionPortalInteractiveInput,
@@ -112,6 +113,9 @@ import type {
   DesktopCompanionPortalRequest,
   DesktopCompanionPortalTokenInput,
   MainWindowAttentionState,
+  MainWindowPresentationAcknowledgement,
+  MainWindowPresentationMode,
+  MainWindowPresentationSnapshot,
 } from "./companions.ts";
 import type { ClientSettings, ServerSettings, ServerSettingsPatch } from "./settings.ts";
 import type {
@@ -970,7 +974,7 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
 export interface DesktopCompanionsBridge {
   syncProjection: (snapshot: CompanionProjectionSnapshot) => Promise<void>;
   resetPositions: () => Promise<void>;
-  onNavigateThread: (listener: (threadRef: ScopedThreadRef) => void) => () => void;
+  onNavigateThread: (listener: (input: CompanionConversationNavigation) => void) => () => void;
   onAcknowledgeThread: (listener: (threadRef: ScopedThreadRef) => void) => () => void;
   onOpenComposer: (listener: (request: DesktopCompanionPortalRequest) => void) => () => void;
   onPortalLayout: (listener: (layout: DesktopCompanionPortalLayout) => void) => () => void;
@@ -981,6 +985,17 @@ export interface DesktopCompanionsBridge {
   setPortalInteractive: (input: DesktopCompanionPortalInteractiveInput) => Promise<void>;
   focusPortal: (input: DesktopCompanionPortalTokenInput) => Promise<void>;
   closeComposer: (input: DesktopCompanionPortalTokenInput) => Promise<void>;
+}
+
+export interface DesktopMainWindowBridge {
+  getPresentation: () => MainWindowPresentationSnapshot;
+  requestPresentation: (
+    mode: MainWindowPresentationMode,
+  ) => Promise<MainWindowPresentationSnapshot>;
+  acknowledgePresentation: (input: MainWindowPresentationAcknowledgement) => Promise<void>;
+  onPresentationChange: (
+    listener: (snapshot: MainWindowPresentationSnapshot) => void,
+  ) => () => void;
 }
 
 /** Minimal bridge exposed only inside a desktop companion window. */
@@ -1048,6 +1063,8 @@ export interface DesktopBridge {
   onMainWindowAttentionStateChange?: (
     listener: (state: MainWindowAttentionState) => void,
   ) => () => void;
+  /** Presentation controller for the single desktop application window. */
+  mainWindow?: DesktopMainWindowBridge;
   getUpdateState: () => Promise<DesktopUpdateState>;
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;

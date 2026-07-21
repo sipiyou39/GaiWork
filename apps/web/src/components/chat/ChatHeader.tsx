@@ -10,7 +10,7 @@ import {
   projectCompanionState,
 } from "@t3tools/client-runtime/companions";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { PlusIcon } from "lucide-react";
+import { Maximize2Icon, Minimize2Icon, PlusIcon } from "lucide-react";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
@@ -28,6 +28,7 @@ import { useUiStateStore } from "~/uiStateStore";
 import { CompanionSprite } from "../companions/CompanionSprite";
 import { useCompanionPicker } from "../companions/CompanionPicker";
 import { useAcknowledgeCompanionCompletion } from "../companions/useAcknowledgeCompanionCompletion";
+import { useMainWindowPresentation } from "../MainWindowPresentation";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -102,6 +103,15 @@ export const ChatHeader = memo(function ChatHeader({
       : ({ signal: "connecting", animation: "thinking", accessibleLabel: "Reconnecting" } as const);
   const { openCompanionPicker } = useCompanionPicker();
   const acknowledgeCompanionCompletion = useAcknowledgeCompanionCompletion();
+  const {
+    mode: windowPresentationMode,
+    isTransitioning: windowPresentationTransitioning,
+    requestWorkspace,
+    requestConversationFocus,
+  } = useMainWindowPresentation();
+  const canControlWindowPresentation = Boolean(window.desktopBridge?.mainWindow);
+  const isConversationFocus =
+    canControlWindowPresentation && windowPresentationMode === "conversation-focus";
   const showOpenInPicker = shouldShowOpenInPicker({
     activeProjectName,
     activeThreadEnvironmentId,
@@ -157,10 +167,10 @@ export const ChatHeader = memo(function ChatHeader({
         data-chat-header-actions
         className={cn(
           "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
-          rightPanelOpen ? "pr-0" : "pr-16",
+          rightPanelOpen || isConversationFocus ? "pr-0" : "pr-16",
         )}
       >
-        {activeProjectScripts && (
+        {!isConversationFocus && activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}
             keybindings={keybindings}
@@ -171,7 +181,7 @@ export const ChatHeader = memo(function ChatHeader({
             onDeleteScript={onDeleteProjectScript}
           />
         )}
-        {showOpenInPicker && (
+        {!isConversationFocus && showOpenInPicker && (
           <OpenInPicker
             environmentId={activeThreadEnvironmentId}
             keybindings={keybindings}
@@ -179,13 +189,41 @@ export const ChatHeader = memo(function ChatHeader({
             openInCwd={openInCwd}
           />
         )}
-        {activeProjectName && (
+        {!isConversationFocus && activeProjectName && (
           <GitActionsControl
             gitCwd={gitCwd}
             activeThreadRef={threadRef}
             {...(draftId ? { draftId } : {})}
           />
         )}
+        {canControlWindowPresentation ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  className="no-drag-region inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/60 text-muted-foreground shadow-xs outline-hidden transition-[background-color,color,border-color,transform] hover:border-border hover:bg-accent hover:text-foreground active:scale-95 focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                  aria-label={
+                    isConversationFocus ? "Open full GaiWork" : "Return to conversation focus"
+                  }
+                  disabled={windowPresentationTransitioning}
+                  onClick={() => {
+                    void (isConversationFocus ? requestWorkspace() : requestConversationFocus());
+                  }}
+                >
+                  {isConversationFocus ? (
+                    <Maximize2Icon className="size-4" />
+                  ) : (
+                    <Minimize2Icon className="size-4" />
+                  )}
+                </button>
+              }
+            />
+            <TooltipPopup side="bottom">
+              {isConversationFocus ? "Open full GaiWork" : "Return to conversation focus"}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
       </div>
     </div>
   );

@@ -26,6 +26,9 @@ type CompanionPortalLayoutListener = Parameters<
 type CompanionCloseComposerListener = Parameters<
   NonNullable<NonNullable<DesktopBridge["companions"]>["onCloseComposer"]>
 >[0];
+type MainWindowPresentationListener = Parameters<
+  NonNullable<NonNullable<DesktopBridge["mainWindow"]>["onPresentationChange"]>
+>[0];
 
 const companionNavigateListeners = new Set<CompanionNavigateListener>();
 let pendingCompanionNavigation: Parameters<CompanionNavigateListener>[0] | null = null;
@@ -37,6 +40,8 @@ const companionPortalLayoutListeners = new Set<CompanionPortalLayoutListener>();
 let pendingCompanionPortalLayout: Parameters<CompanionPortalLayoutListener>[0] | null = null;
 const companionCloseComposerListeners = new Set<CompanionCloseComposerListener>();
 const pendingCompanionPortalCloses: Array<Parameters<CompanionCloseComposerListener>[0]> = [];
+const mainWindowPresentationListeners = new Set<MainWindowPresentationListener>();
+let pendingMainWindowPresentation: Parameters<MainWindowPresentationListener>[0] | null = null;
 
 // Register during preload so navigation sent immediately after a recreated
 // renderer finishes loading cannot be lost before React mounts its listener.
@@ -88,6 +93,16 @@ ipcRenderer.on(IpcChannels.COMPANION_CLOSE_COMPOSER_CHANNEL, (_event, input: unk
     return;
   }
   for (const listener of companionCloseComposerListeners) listener(target);
+});
+
+ipcRenderer.on(IpcChannels.MAIN_WINDOW_PRESENTATION_CHANNEL, (_event, input: unknown) => {
+  if (typeof input !== "object" || input === null) return;
+  const snapshot = input as Parameters<MainWindowPresentationListener>[0];
+  if (mainWindowPresentationListeners.size === 0) {
+    pendingMainWindowPresentation = snapshot;
+    return;
+  }
+  for (const listener of mainWindowPresentationListeners) listener(snapshot);
 });
 
 function unwrapEnsureSshEnvironmentResult(result: unknown) {
@@ -224,6 +239,32 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return () => {
       ipcRenderer.removeListener(IpcChannels.MAIN_WINDOW_ATTENTION_STATE_CHANNEL, wrappedListener);
     };
+  },
+  mainWindow: {
+    getPresentation: () => {
+      const result = ipcRenderer.sendSync(IpcChannels.GET_MAIN_WINDOW_PRESENTATION_CHANNEL);
+      if (typeof result !== "object" || result === null) {
+        return { mode: "workspace", transitionId: 0 };
+      }
+      return result as ReturnType<NonNullable<DesktopBridge["mainWindow"]>["getPresentation"]>;
+    },
+    requestPresentation: (mode) =>
+      ipcRenderer.invoke(IpcChannels.REQUEST_MAIN_WINDOW_PRESENTATION_CHANNEL, mode),
+    acknowledgePresentation: (input) =>
+      ipcRenderer.invoke(IpcChannels.ACKNOWLEDGE_MAIN_WINDOW_PRESENTATION_CHANNEL, input),
+    onPresentationChange: (listener) => {
+      mainWindowPresentationListeners.add(listener);
+      const pending = pendingMainWindowPresentation;
+      pendingMainWindowPresentation = null;
+      if (pending) {
+        queueMicrotask(() => {
+          if (mainWindowPresentationListeners.has(listener)) listener(pending);
+        });
+      }
+      return () => {
+        mainWindowPresentationListeners.delete(listener);
+      };
+    },
   },
   getUpdateState: () => ipcRenderer.invoke(IpcChannels.UPDATE_GET_STATE_CHANNEL),
   setUpdateChannel: (channel) =>

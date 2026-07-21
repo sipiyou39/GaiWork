@@ -802,11 +802,13 @@ export const make = Effect.gen(function* () {
   });
 
   const revealAndNavigate = Effect.fn("desktop.companions.navigate")(function* (
-    projection: CompanionProjection,
+    layout: CompanionLayout,
   ) {
     if (activePortal) activePortal.restoreExternalApplication = false;
     cancelPendingNativeFocusRestore();
-    const mainWindow = yield* desktopWindow.navigateToThread(projection.threadRef);
+    const mainWindow = yield* desktopWindow.openCompanionConversation(layout.projection.threadRef, {
+      bounds: layout.bounds,
+    });
     attachMainWindowGuards(mainWindow);
   });
 
@@ -1518,7 +1520,7 @@ export const make = Effect.gen(function* () {
     inFlightPositions.delete(drag.companionId);
     if (pointerEvent.phase === "up") {
       yield* acknowledgeProjection(located.layout.projection);
-      yield* revealAndNavigate(located.layout.projection);
+      yield* revealAndNavigate(located.layout);
     }
   });
 

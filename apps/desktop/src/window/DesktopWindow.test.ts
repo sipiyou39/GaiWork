@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -13,6 +14,19 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 
 vi.mock("electron", async (importOriginal) => ({
   ...(await importOriginal<typeof import("electron")>()),
+  screen: {
+    getAllDisplays: vi.fn(() => [{ id: 1, workArea: { x: 0, y: 24, width: 1_440, height: 876 } }]),
+    getPrimaryDisplay: vi.fn(() => ({
+      id: 1,
+      workArea: { x: 0, y: 24, width: 1_440, height: 876 },
+    })),
+    getDisplayMatching: vi.fn(() => ({
+      id: 1,
+      workArea: { x: 0, y: 24, width: 1_440, height: 876 },
+    })),
+    on: vi.fn(),
+    removeListener: vi.fn(),
+  },
   session: {
     fromPartition: vi.fn(() => ({
       getUserAgent: vi.fn(() => "Mozilla/5.0 Electron/41.5.0 gaiwork/1.2.3"),
@@ -32,11 +46,13 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
   COMPANION_NAVIGATE_THREAD_CHANNEL,
+  MAIN_WINDOW_PRESENTATION_CHANNEL,
   MENU_ACTION_CHANNEL,
   WINDOW_FULLSCREEN_STATE_CHANNEL,
 } from "../ipc/channels.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
+import * as DesktopWindowPresentationStore from "./DesktopWindowPresentationStore.ts";
 import * as PreviewManager from "../preview/Manager.ts";
 
 const environmentInput = {
@@ -55,6 +71,7 @@ function makeFakeBrowserWindow() {
   const windowListeners = new Map<string, (...args: readonly unknown[]) => void>();
   const webContentsListeners = new Map<string, (...args: readonly unknown[]) => void>();
   const webContents = {
+    id: 17,
     copyImageAt: vi.fn(),
     getURL: vi.fn(() => "gaiwork-dev://app/"),
     isLoadingMainFrame: vi.fn(() => false),
@@ -69,34 +86,56 @@ function makeFakeBrowserWindow() {
     setWindowOpenHandler: vi.fn(),
   };
 
+  let bounds = { x: 120, y: 80, width: 1_100, height: 780 };
+  let maximized = false;
+
   const window = {
     close: vi.fn(),
     focus: vi.fn(),
+    getBounds: vi.fn(() => bounds),
     isDestroyed: vi.fn(() => false),
     isFullScreen: vi.fn(() => false),
+    isMaximized: vi.fn(() => maximized),
     isMinimized: vi.fn(() => false),
     isVisible: vi.fn(() => true),
     loadURL: vi.fn(() => Promise.resolve()),
+    maximize: vi.fn(() => {
+      maximized = true;
+    }),
     on: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
       windowListeners.set(eventName, listener);
     }),
     once: vi.fn(),
     restore: vi.fn(),
+    setBounds: vi.fn((nextBounds: Electron.Rectangle) => {
+      bounds = { ...nextBounds };
+    }),
     setBackgroundColor: vi.fn(),
+    setFullScreen: vi.fn(),
+    setMinimumSize: vi.fn(),
+    setMaximumSize: vi.fn(),
     setAutoHideCursor: vi.fn(),
     setTitle: vi.fn(),
     setTitleBarOverlay: vi.fn(),
     show: vi.fn(),
+    unmaximize: vi.fn(() => {
+      maximized = false;
+    }),
     webContents,
   };
 
   return {
     window: window as unknown as Electron.BrowserWindow,
     loadURL: window.loadURL,
+    maximize: window.maximize,
     openDevTools: webContents.openDevTools,
     reload: webContents.reload,
     send: webContents.send,
     setAutoHideCursor: window.setAutoHideCursor,
+    setBounds: window.setBounds,
+    setMaximumSize: window.setMaximumSize,
+    setMinimumSize: window.setMinimumSize,
+    unmaximize: window.unmaximize,
     webContentsListeners,
     windowListeners,
   };
@@ -137,6 +176,14 @@ const electronThemeLayer = Layer.succeed(ElectronTheme.ElectronTheme, {
   setSource: () => Effect.void,
   onUpdated: () => Effect.void,
 } satisfies ElectronTheme.ElectronTheme["Service"]);
+
+const desktopWindowPresentationStoreLayer = Layer.succeed(
+  DesktopWindowPresentationStore.DesktopWindowPresentationStore,
+  DesktopWindowPresentationStore.DesktopWindowPresentationStore.of({
+    getCompactPosition: Effect.succeed(null),
+    setCompactPosition: () => Effect.void,
+  }),
+);
 
 const desktopEnvironmentLayer = DesktopEnvironment.layer(environmentInput).pipe(
   Layer.provide(
@@ -193,6 +240,7 @@ function makeTestLayer(input: {
           copyText: () => Effect.void,
         } satisfies ElectronShell.ElectronShell["Service"]),
         electronThemeLayer,
+        desktopWindowPresentationStoreLayer,
         electronWindowLayer,
         Layer.mock(PreviewManager.PreviewManager)({
           getBrowserSession: () => Effect.succeed({} as Electron.Session),
@@ -285,6 +333,7 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
             copyText: () => Effect.void,
           } satisfies ElectronShell.ElectronShell["Service"]),
           electronThemeLayer,
+          desktopWindowPresentationStoreLayer,
           Layer.succeed(ElectronWindow.ElectronWindow, electronWindowShape),
           Layer.mock(PreviewManager.PreviewManager)({
             getBrowserSession: () => Effect.succeed({} as Electron.Session),
@@ -395,16 +444,78 @@ describe("DesktopWindow", () => {
         yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
         const originalWindow = Option.getOrThrow(yield* Ref.get(mainWindow));
 
-        yield* desktopWindow.navigateToThread(first);
-        yield* desktopWindow.navigateToThread(second);
+        const anchor = { bounds: { x: 1_200, y: 600, width: 192, height: 208 } };
+        const firstNavigation = yield* Effect.forkChild(
+          desktopWindow.openCompanionConversation(first, anchor),
+        );
+        yield* TestClock.adjust("350 millis");
+        yield* Fiber.join(firstNavigation);
+        yield* desktopWindow.openCompanionConversation(second, anchor);
 
         assert.equal(yield* Ref.get(createCount), 1);
         assert.equal(Option.getOrThrow(yield* Ref.get(mainWindow)), originalWindow);
         assert.deepEqual(fakeWindow.loadURL.mock.calls, [["gaiwork-dev://app/"]]);
-        assert.deepEqual(fakeWindow.send.mock.calls, [
-          [COMPANION_NAVIGATE_THREAD_CHANNEL, first],
-          [COMPANION_NAVIGATE_THREAD_CHANNEL, second],
+        assert.deepEqual(fakeWindow.setBounds.mock.calls, [
+          [{ x: 0, y: 24, width: 640, height: 876 }, true],
+          [{ x: 0, y: 24, width: 640, height: 876 }, true],
         ]);
+        assert.deepEqual(fakeWindow.setMinimumSize.mock.calls.at(-1), [640, 876]);
+        assert.deepEqual(fakeWindow.setMaximumSize.mock.calls.at(-1), [900, 876]);
+        assert.deepEqual(fakeWindow.send.mock.calls, [
+          [MAIN_WINDOW_PRESENTATION_CHANNEL, { mode: "conversation-focus", transitionId: 1 }],
+          [
+            COMPANION_NAVIGATE_THREAD_CHANNEL,
+            { threadRef: first, presentation: "conversation-focus" },
+          ],
+          [
+            COMPANION_NAVIGATE_THREAD_CHANNEL,
+            { threadRef: second, presentation: "conversation-focus" },
+          ],
+        ]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("acknowledges compact and workspace transitions from the registered renderer", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({ window: fakeWindow.window, createCount, mainWindow });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const compactTransition = yield* Effect.forkChild(
+          desktopWindow.requestPresentation("conversation-focus", 17),
+        );
+        yield* Effect.yieldNow;
+        yield* desktopWindow.acknowledgePresentation(
+          { mode: "conversation-focus", transitionId: 1 },
+          17,
+        );
+        assert.deepEqual(yield* Fiber.join(compactTransition), {
+          mode: "conversation-focus",
+          transitionId: 1,
+        });
+
+        const workspaceTransition = yield* Effect.forkChild(
+          desktopWindow.requestPresentation("workspace", 17),
+        );
+        yield* Effect.yieldNow;
+        yield* desktopWindow.acknowledgePresentation({ mode: "workspace", transitionId: 2 }, 17);
+        assert.deepEqual(yield* Fiber.join(workspaceTransition), {
+          mode: "workspace",
+          transitionId: 2,
+        });
+        assert.equal(fakeWindow.maximize.mock.calls.length, 1);
+        assert.deepEqual(fakeWindow.setMaximumSize.mock.calls.at(-1), [100_000, 100_000]);
+        assert.deepEqual(fakeWindow.setMinimumSize.mock.calls.at(-1), [840, 620]);
+
+        const rejected = yield* desktopWindow.requestPresentation("conversation-focus", 99);
+        assert.deepEqual(rejected, { mode: "workspace", transitionId: 2 });
+        assert.equal(fakeWindow.send.mock.calls.length, 2);
       }).pipe(Effect.provide(layer));
     }),
   );

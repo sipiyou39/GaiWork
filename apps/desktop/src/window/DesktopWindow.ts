@@ -1,12 +1,18 @@
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 
-import type * as Electron from "electron";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import * as Electron from "electron";
+import type {
+  MainWindowPresentationAcknowledgement,
+  MainWindowPresentationMode,
+  MainWindowPresentationSnapshot,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -18,6 +24,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
   COMPANION_NAVIGATE_THREAD_CHANNEL,
+  MAIN_WINDOW_PRESENTATION_CHANNEL,
   MENU_ACTION_CHANNEL,
   WINDOW_FULLSCREEN_STATE_CHANNEL,
 } from "../ipc/channels.ts";
@@ -26,11 +33,16 @@ import {
   attachDesktopCompanionPortalWindow,
   authorizeDesktopCompanionPortalWindow,
 } from "../companions/DesktopCompanionPortalRegistry.ts";
+import * as DesktopWindowPresentationStore from "./DesktopWindowPresentationStore.ts";
 
 const TITLEBAR_HEIGHT = 40;
 const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linux
 const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
+const WORKSPACE_MIN_WIDTH = 840;
+const WORKSPACE_MIN_HEIGHT = 620;
+const PRESENTATION_ACK_TIMEOUT = "350 millis";
+const COMPACT_GEOMETRY_SAVE_DELAY_MS = 120;
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
 const DEVELOPMENT_RETRYABLE_LOAD_ERROR_CODES = new Set([
   -2, // ERR_FAILED
@@ -54,7 +66,12 @@ type DesktopWindowRuntimeServices =
   | ElectronShell.ElectronShell
   | ElectronTheme.ElectronTheme
   | ElectronWindow.ElectronWindow
+  | DesktopWindowPresentationStore.DesktopWindowPresentationStore
   | PreviewManager.PreviewManager;
+
+export interface CompanionWindowAnchor {
+  readonly bounds: Electron.Rectangle;
+}
 
 export type DesktopWindowError =
   | ElectronWindow.ElectronWindowCreateError
@@ -88,6 +105,21 @@ export class DesktopWindow extends Context.Service<
     readonly navigateToThread: (
       threadRef: ScopedThreadRef,
     ) => Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
+    readonly openCompanionConversation: (
+      threadRef: ScopedThreadRef,
+      anchor: CompanionWindowAnchor,
+    ) => Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
+    readonly showWorkspace: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
+    readonly showConversationFocus: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
+    readonly getPresentation: Effect.Effect<MainWindowPresentationSnapshot>;
+    readonly requestPresentation: (
+      mode: MainWindowPresentationMode,
+      senderWebContentsId: number,
+    ) => Effect.Effect<MainWindowPresentationSnapshot, DesktopWindowError>;
+    readonly acknowledgePresentation: (
+      input: MainWindowPresentationAcknowledgement,
+      senderWebContentsId: number,
+    ) => Effect.Effect<void>;
     readonly syncAppearance: Effect.Effect<void>;
   }
 >()("@t3tools/desktop/window/DesktopWindow") {}
@@ -213,6 +245,7 @@ export const make = Effect.gen(function* () {
   const electronShell = yield* ElectronShell.ElectronShell;
   const electronTheme = yield* ElectronTheme.ElectronTheme;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
+  const presentationStore = yield* DesktopWindowPresentationStore.DesktopWindowPresentationStore;
   const previewManager = yield* PreviewManager.PreviewManager;
   // Window-side latch for the primary backend's readiness. Set by
   // handleBackendReady (driven by the pool's onReady callback), cleared
@@ -224,10 +257,23 @@ export const make = Effect.gen(function* () {
   // is never mistaken for the real main window.
   const splashWindowRef = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
   const pendingNavigationRef = yield* Ref.make<Option.Option<ScopedThreadRef>>(Option.none());
+  const deferAutomaticRevealRef = yield* Ref.make(false);
+  const presentationRef = yield* Ref.make<MainWindowPresentationSnapshot>({
+    mode: "workspace",
+    transitionId: 0,
+  });
+  const lastAcknowledgedPresentationRef = yield* Ref.make(-1);
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
   const navigationLoadListeners = new WeakSet<Electron.WebContents>();
+  const pendingPresentationAcknowledgements = new Map<
+    number,
+    {
+      readonly mode: MainWindowPresentationMode;
+      readonly deferred: Deferred.Deferred<void>;
+    }
+  >();
 
   const flushPendingNavigation = (window: Electron.BrowserWindow) =>
     Ref.getAndSet(pendingNavigationRef, Option.none()).pipe(
@@ -237,7 +283,10 @@ export const make = Effect.gen(function* () {
           onSome: (threadRef) =>
             Effect.sync(() => {
               if (!window.isDestroyed()) {
-                window.webContents.send(COMPANION_NAVIGATE_THREAD_CHANNEL, threadRef);
+                window.webContents.send(COMPANION_NAVIGATE_THREAD_CHANNEL, {
+                  threadRef,
+                  presentation: "conversation-focus",
+                });
               }
             }),
         }),
@@ -270,6 +319,201 @@ export const make = Effect.gen(function* () {
   const currentMainWindow = electronWindow.currentMainOrFirst.pipe(Effect.flatMap(withoutSplash));
   const focusedMainWindow = electronWindow.focusedMainOrFirst.pipe(Effect.flatMap(withoutSplash));
 
+  const isCurrentMainSender = (senderWebContentsId: number) =>
+    currentMainWindow.pipe(
+      Effect.map(
+        (window) =>
+          Option.isSome(window) &&
+          !window.value.isDestroyed() &&
+          window.value.webContents.id === senderWebContentsId,
+      ),
+    );
+
+  const displayById = (displayId: string): Electron.Display | null =>
+    Electron.screen.getAllDisplays().find((display) => String(display.id) === displayId) ?? null;
+
+  const displayForAnchor = (anchor: CompanionWindowAnchor | null): Electron.Display => {
+    if (anchor) {
+      return Electron.screen.getDisplayMatching(anchor.bounds);
+    }
+    return Electron.screen.getPrimaryDisplay();
+  };
+
+  const resolveCompactBounds = Effect.fn("desktop.window.resolveCompactBounds")(function* (
+    anchor: CompanionWindowAnchor | null,
+  ) {
+    const stored = yield* presentationStore.getCompactPosition;
+    if (stored !== null) {
+      const storedDisplay = displayById(stored.displayId);
+      if (storedDisplay) {
+        return {
+          bounds: DesktopWindowPresentationStore.compactWindowBoundsFromPosition({
+            position: stored,
+            workArea: storedDisplay.workArea,
+          }),
+          display: storedDisplay,
+        } as const;
+      }
+    }
+
+    const display = displayForAnchor(anchor);
+    const companionBounds =
+      anchor?.bounds ??
+      ({
+        x: display.workArea.x,
+        y: display.workArea.y,
+        width: 1,
+        height: 1,
+      } satisfies Electron.Rectangle);
+    return {
+      bounds: DesktopWindowPresentationStore.defaultCompactWindowBounds({
+        workArea: display.workArea,
+        companionBounds,
+      }),
+      display,
+    } as const;
+  });
+
+  const persistCompactBounds = Effect.fn("desktop.window.persistCompactBounds")(function* (
+    window: Electron.BrowserWindow,
+  ) {
+    const presentation = yield* Ref.get(presentationRef);
+    if (presentation.mode !== "conversation-focus" || window.isDestroyed()) return;
+    const currentBounds = window.getBounds();
+    const display = Electron.screen.getDisplayMatching(currentBounds);
+    const width = DesktopWindowPresentationStore.constrainCompactWindowWidth(
+      currentBounds.width,
+      display.workArea.width,
+    );
+    const maximumX = display.workArea.x + display.workArea.width - width;
+    const bounds = {
+      x: Math.round(Math.max(display.workArea.x, Math.min(currentBounds.x, maximumX))),
+      y: display.workArea.y,
+      width,
+      height: display.workArea.height,
+    } satisfies Electron.Rectangle;
+    window.setMinimumSize(
+      Math.min(DesktopWindowPresentationStore.COMPACT_WINDOW_MIN_WIDTH, display.workArea.width),
+      display.workArea.height,
+    );
+    window.setMaximumSize(
+      Math.min(DesktopWindowPresentationStore.COMPACT_WINDOW_MAX_WIDTH, display.workArea.width),
+      display.workArea.height,
+    );
+    if (
+      currentBounds.x !== bounds.x ||
+      currentBounds.y !== bounds.y ||
+      currentBounds.width !== bounds.width ||
+      currentBounds.height !== bounds.height
+    ) {
+      window.setBounds(bounds, false);
+    }
+    yield* presentationStore.setCompactPosition(
+      DesktopWindowPresentationStore.compactWindowPositionFromBounds({
+        displayId: String(display.id),
+        bounds,
+        workArea: display.workArea,
+      }),
+    );
+  });
+
+  const sendPresentationAndAwait = Effect.fn("desktop.window.sendPresentationAndAwait")(function* (
+    window: Electron.BrowserWindow,
+    snapshot: MainWindowPresentationSnapshot,
+  ) {
+    if (window.isDestroyed() || window.webContents.isLoadingMainFrame()) return;
+    if ((yield* Ref.get(lastAcknowledgedPresentationRef)) >= snapshot.transitionId) return;
+
+    let pending = pendingPresentationAcknowledgements.get(snapshot.transitionId);
+    if (!pending) {
+      pending = {
+        mode: snapshot.mode,
+        deferred: yield* Deferred.make<void>(),
+      };
+      pendingPresentationAcknowledgements.set(snapshot.transitionId, pending);
+      window.webContents.send(MAIN_WINDOW_PRESENTATION_CHANNEL, snapshot);
+    }
+    yield* Deferred.await(pending.deferred).pipe(
+      Effect.timeoutOrElse({
+        duration: PRESENTATION_ACK_TIMEOUT,
+        orElse: () => Effect.void,
+      }),
+    );
+    if (pendingPresentationAcknowledgements.get(snapshot.transitionId) === pending) {
+      pendingPresentationAcknowledgements.delete(snapshot.transitionId);
+    }
+  });
+
+  const publishCurrentPresentation = Effect.fn("desktop.window.publishCurrentPresentation")(
+    function* (window: Electron.BrowserWindow) {
+      const snapshot = yield* Ref.get(presentationRef);
+      yield* sendPresentationAndAwait(window, snapshot);
+    },
+  );
+
+  const transitionPresentation = Effect.fn("desktop.window.transitionPresentation")(function* (
+    window: Electron.BrowserWindow,
+    mode: MainWindowPresentationMode,
+    anchor: CompanionWindowAnchor | null,
+  ) {
+    const current = yield* Ref.get(presentationRef);
+    const modeChanged = current.mode !== mode;
+    const snapshot: MainWindowPresentationSnapshot = !modeChanged
+      ? current
+      : {
+          mode,
+          transitionId: current.transitionId + 1,
+        };
+    if (snapshot !== current) {
+      yield* Ref.set(presentationRef, snapshot);
+    }
+
+    const wasVisible = window.isVisible();
+    if (mode === "conversation-focus") {
+      const compact = yield* resolveCompactBounds(anchor);
+      if (window.isFullScreen()) window.setFullScreen(false);
+      if (window.isMaximized()) window.unmaximize();
+      window.setMinimumSize(
+        Math.min(
+          DesktopWindowPresentationStore.COMPACT_WINDOW_MIN_WIDTH,
+          compact.display.workArea.width,
+        ),
+        compact.display.workArea.height,
+      );
+      window.setMaximumSize(
+        Math.min(
+          DesktopWindowPresentationStore.COMPACT_WINDOW_MAX_WIDTH,
+          compact.display.workArea.width,
+        ),
+        compact.display.workArea.height,
+      );
+      if (wasVisible && modeChanged) {
+        yield* sendPresentationAndAwait(window, snapshot);
+      }
+      window.setBounds(compact.bounds, wasVisible && environment.platform === "darwin");
+      yield* presentationStore.setCompactPosition(
+        DesktopWindowPresentationStore.compactWindowPositionFromBounds({
+          displayId: String(compact.display.id),
+          bounds: compact.bounds,
+          workArea: compact.display.workArea,
+        }),
+      );
+      if (!wasVisible && modeChanged) {
+        yield* sendPresentationAndAwait(window, snapshot);
+      }
+      return snapshot;
+    }
+
+    if (window.isFullScreen()) window.setFullScreen(false);
+    window.setMaximumSize(100_000, 100_000);
+    window.setMinimumSize(WORKSPACE_MIN_WIDTH, WORKSPACE_MIN_HEIGHT);
+    if (!window.isMaximized()) window.maximize();
+    if (modeChanged) {
+      yield* sendPresentationAndAwait(window, snapshot);
+    }
+    return snapshot;
+  });
+
   const createWindow = Effect.fn("desktop.window.createWindow")(function* (): Effect.fn.Return<
     Electron.BrowserWindow,
     DesktopWindowError
@@ -300,10 +544,39 @@ export const make = Effect.gen(function* () {
         backgroundThrottling: false,
       },
     });
+    yield* Ref.set(lastAcknowledgedPresentationRef, -1);
+    pendingPresentationAcknowledgements.clear();
 
     if (environment.platform === "darwin") {
       window.setAutoHideCursor(false);
     }
+
+    let compactGeometryFiber: Fiber.Fiber<void, never> | undefined;
+    const clearCompactGeometrySync = () => {
+      if (compactGeometryFiber === undefined) return;
+      const fiber = compactGeometryFiber;
+      compactGeometryFiber = undefined;
+      runFork(Fiber.interrupt(fiber));
+    };
+    const scheduleCompactGeometrySync = () => {
+      clearCompactGeometrySync();
+      compactGeometryFiber = runFork(
+        Effect.sleep(COMPACT_GEOMETRY_SAVE_DELAY_MS).pipe(
+          Effect.andThen(persistCompactBounds(window)),
+          Effect.onExit(() =>
+            Effect.sync(() => {
+              compactGeometryFiber = undefined;
+            }),
+          ),
+        ),
+      );
+    };
+    const onDisplayMetricsChanged = () => scheduleCompactGeometrySync();
+    window.on("move", scheduleCompactGeometrySync);
+    window.on("resize", scheduleCompactGeometrySync);
+    Electron.screen?.on("display-added", onDisplayMetricsChanged);
+    Electron.screen?.on("display-removed", onDisplayMetricsChanged);
+    Electron.screen?.on("display-metrics-changed", onDisplayMetricsChanged);
 
     yield* previewManager.setMainWindow(window);
     window.webContents.on("will-attach-webview", (event, webPreferences, params) => {
@@ -495,7 +768,12 @@ export const make = Effect.gen(function* () {
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
       window.setTitle(environment.displayName);
-      void runPromise(flushPendingNavigation(window));
+      void runPromise(
+        Effect.all([publishCurrentPresentation(window), flushPendingNavigation(window)], {
+          concurrency: "unbounded",
+          discard: true,
+        }),
+      );
     });
     window.webContents.on(
       "did-fail-load",
@@ -543,7 +821,18 @@ export const make = Effect.gen(function* () {
     bindFirstRevealTrigger(revealSubscribers, () => {
       // Reveal the real window, then close the connecting splash (if any) so the
       // two don't overlap and there's no blank gap between them.
-      void runPromise(Effect.andThen(electronWindow.reveal(window), dismissConnectingSplash));
+      void runPromise(
+        Ref.get(deferAutomaticRevealRef).pipe(
+          Effect.flatMap((deferred) =>
+            deferred
+              ? Effect.void
+              : publishCurrentPresentation(window).pipe(
+                  Effect.andThen(electronWindow.reveal(window)),
+                  Effect.andThen(dismissConnectingSplash),
+                ),
+          ),
+        ),
+      );
     });
 
     loadApplication();
@@ -553,6 +842,10 @@ export const make = Effect.gen(function* () {
 
     window.on("closed", () => {
       clearDevelopmentLoadRetry();
+      clearCompactGeometrySync();
+      Electron.screen?.removeListener("display-added", onDisplayMetricsChanged);
+      Electron.screen?.removeListener("display-removed", onDisplayMetricsChanged);
+      Electron.screen?.removeListener("display-metrics-changed", onDisplayMetricsChanged);
       void runPromise(electronWindow.clearMain(Option.some(window)));
     });
 
@@ -574,11 +867,71 @@ export const make = Effect.gen(function* () {
     return yield* createMain;
   }).pipe(Effect.withSpan("desktop.window.ensureMain"));
 
-  const revealOrCreateMain = Effect.gen(function* () {
+  const revealAfterRendererReady = Effect.fn("desktop.window.revealAfterRendererReady")(function* (
+    window: Electron.BrowserWindow,
+  ) {
+    yield* publishCurrentPresentation(window);
+    yield* flushPendingNavigation(window);
+    yield* Ref.set(deferAutomaticRevealRef, false);
+    yield* electronWindow.reveal(window);
+    yield* dismissConnectingSplash;
+  });
+
+  const scheduleRevealAfterRendererReady = (window: Electron.BrowserWindow): void => {
+    if (!navigationLoadListeners.has(window.webContents)) {
+      navigationLoadListeners.add(window.webContents);
+      window.webContents.once("did-finish-load", () => {
+        navigationLoadListeners.delete(window.webContents);
+        void runPromise(revealAfterRendererReady(window));
+      });
+    }
+  };
+
+  const showWorkspace = Effect.gen(function* () {
     const window = yield* ensureMain;
+    yield* transitionPresentation(window, "workspace", null);
+    if (window.webContents.isLoadingMainFrame()) {
+      scheduleRevealAfterRendererReady(window);
+      return window;
+    }
     yield* electronWindow.reveal(window);
     return window;
-  }).pipe(Effect.withSpan("desktop.window.revealOrCreateMain"));
+  }).pipe(Effect.withSpan("desktop.window.showWorkspace"));
+
+  const showConversationFocus = Effect.gen(function* () {
+    const window = yield* ensureMain;
+    yield* transitionPresentation(window, "conversation-focus", null);
+    if (window.webContents.isLoadingMainFrame()) {
+      scheduleRevealAfterRendererReady(window);
+      return window;
+    }
+    yield* electronWindow.reveal(window);
+    return window;
+  }).pipe(Effect.withSpan("desktop.window.showConversationFocus"));
+
+  const openCompanionConversation = Effect.fn("desktop.window.openCompanionConversation")(
+    function* (threadRef: ScopedThreadRef, anchor: CompanionWindowAnchor) {
+      yield* Ref.set(pendingNavigationRef, Option.some(threadRef));
+      const existingWindow = yield* currentMainWindow;
+      if (Option.isNone(existingWindow)) {
+        yield* Ref.set(deferAutomaticRevealRef, true);
+      }
+      const window = Option.isSome(existingWindow) ? existingWindow.value : yield* ensureMain;
+      yield* transitionPresentation(window, "conversation-focus", anchor);
+      if (window.webContents.isLoadingMainFrame()) {
+        scheduleRevealAfterRendererReady(window);
+        return window;
+      }
+      yield* flushPendingNavigation(window);
+      yield* Ref.set(deferAutomaticRevealRef, false);
+      yield* electronWindow.reveal(window);
+      return window;
+    },
+  );
+
+  const revealOrCreateMain = showWorkspace.pipe(
+    Effect.withSpan("desktop.window.revealOrCreateMain"),
+  );
 
   const createMainIfBackendReady = Effect.gen(function* () {
     const backendReady = yield* Ref.get(backendReadyRef);
@@ -641,6 +994,7 @@ export const make = Effect.gen(function* () {
     activate: Effect.gen(function* () {
       const existingWindow = yield* currentMainWindow;
       if (Option.isSome(existingWindow)) {
+        yield* transitionPresentation(existingWindow.value, "workspace", null);
         yield* electronWindow.reveal(existingWindow.value);
         return;
       }
@@ -657,7 +1011,9 @@ export const make = Effect.gen(function* () {
           return;
         }
       }
-      yield* createMainIfBackendReady;
+      if (backendReady) {
+        yield* showWorkspace;
+      }
     }).pipe(Effect.withSpan("desktop.window.activate")),
     createMainIfBackendReady,
     showConnectingSplash,
@@ -677,38 +1033,71 @@ export const make = Effect.gen(function* () {
       }
       const targetWindow = Option.isSome(existingWindow) ? existingWindow.value : yield* ensureMain;
 
-      const send = () => {
-        if (targetWindow.isDestroyed()) return;
-        targetWindow.webContents.send(MENU_ACTION_CHANNEL, action);
-        void runPromise(electronWindow.reveal(targetWindow));
-      };
+      yield* transitionPresentation(targetWindow, "workspace", null);
+
+      const send = () =>
+        runPromise(
+          Effect.sync(() => {
+            if (!targetWindow.isDestroyed()) {
+              targetWindow.webContents.send(MENU_ACTION_CHANNEL, action);
+            }
+          }).pipe(Effect.andThen(electronWindow.reveal(targetWindow))),
+        );
 
       if (targetWindow.webContents.isLoadingMainFrame()) {
-        targetWindow.webContents.once("did-finish-load", send);
+        targetWindow.webContents.once("did-finish-load", () => {
+          void send();
+        });
         return;
       }
 
-      send();
+      yield* Effect.promise(send);
     }),
     navigateToThread: Effect.fn("desktop.window.navigateToThread")(function* (threadRef) {
-      yield* Ref.set(pendingNavigationRef, Option.some(threadRef));
-      const targetWindow = yield* ensureMain;
-      yield* electronWindow.reveal(targetWindow);
-
-      if (targetWindow.webContents.isLoadingMainFrame()) {
-        if (!navigationLoadListeners.has(targetWindow.webContents)) {
-          navigationLoadListeners.add(targetWindow.webContents);
-          targetWindow.webContents.once("did-finish-load", () => {
-            navigationLoadListeners.delete(targetWindow.webContents);
-            void runPromise(flushPendingNavigation(targetWindow));
-          });
-        }
-        return targetWindow;
-      }
-
-      yield* flushPendingNavigation(targetWindow);
-      return targetWindow;
+      const existingWindow = yield* currentMainWindow;
+      const anchor = {
+        bounds: Option.isSome(existingWindow)
+          ? existingWindow.value.getBounds()
+          : Electron.screen.getPrimaryDisplay().workArea,
+      };
+      return yield* openCompanionConversation(threadRef, anchor);
     }),
+    openCompanionConversation,
+    showWorkspace,
+    showConversationFocus,
+    getPresentation: Ref.get(presentationRef),
+    requestPresentation: Effect.fn("desktop.window.requestPresentation")(
+      function* (mode, senderWebContentsId) {
+        if (!(yield* isCurrentMainSender(senderWebContentsId))) {
+          yield* logWindowWarning("rejected presentation request from an unregistered renderer", {
+            senderWebContentsId,
+          });
+          return yield* Ref.get(presentationRef);
+        }
+        const window = yield* ensureMain;
+        return yield* transitionPresentation(window, mode, null);
+      },
+    ),
+    acknowledgePresentation: Effect.fn("desktop.window.acknowledgePresentation")(
+      function* (input, senderWebContentsId) {
+        if (!(yield* isCurrentMainSender(senderWebContentsId))) {
+          yield* logWindowWarning(
+            "rejected presentation acknowledgement from an unregistered renderer",
+            { senderWebContentsId },
+          );
+          return;
+        }
+        const current = yield* Ref.get(presentationRef);
+        if (input.transitionId !== current.transitionId || input.mode !== current.mode) return;
+        yield* Ref.update(lastAcknowledgedPresentationRef, (value) =>
+          Math.max(value, input.transitionId),
+        );
+        const pending = pendingPresentationAcknowledgements.get(input.transitionId);
+        if (pending?.mode === input.mode) {
+          yield* Deferred.succeed(pending.deferred, undefined);
+        }
+      },
+    ),
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
       yield* electronWindow.syncAllAppearance((window) =>

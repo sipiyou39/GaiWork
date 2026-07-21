@@ -7,6 +7,9 @@ import {
   DesktopCompanionOverlayPresentation,
   DesktopCompanionPortalMetricsInput,
   DesktopCompanionPortalRequest,
+  CompanionConversationNavigation,
+  MainWindowPresentationAcknowledgement,
+  MainWindowPresentationSnapshot,
 } from "./companions.ts";
 
 describe("companion IPC contracts", () => {
@@ -15,6 +18,36 @@ describe("companion IPC contracts", () => {
   const decodeOverlayPresentation = Schema.decodeUnknownSync(DesktopCompanionOverlayPresentation);
   const decodePortalRequest = Schema.decodeUnknownSync(DesktopCompanionPortalRequest);
   const decodePortalMetrics = Schema.decodeUnknownSync(DesktopCompanionPortalMetricsInput);
+  const decodePresentation = Schema.decodeUnknownSync(MainWindowPresentationSnapshot);
+  const decodePresentationAcknowledgement = Schema.decodeUnknownSync(
+    MainWindowPresentationAcknowledgement,
+  );
+  const decodeNavigation = Schema.decodeUnknownSync(CompanionConversationNavigation);
+
+  it("validates revisioned main-window presentation transitions", () => {
+    expect(decodePresentation({ mode: "conversation-focus", transitionId: 4 })).toEqual({
+      mode: "conversation-focus",
+      transitionId: 4,
+    });
+    expect(() =>
+      decodePresentationAcknowledgement({ mode: "workspace", transitionId: -1 }),
+    ).toThrow();
+  });
+
+  it("pins companion navigation to conversation focus", () => {
+    expect(
+      decodeNavigation({
+        threadRef: { environmentId: "environment-test", threadId: "thread-test" },
+        presentation: "conversation-focus",
+      }).presentation,
+    ).toBe("conversation-focus");
+    expect(() =>
+      decodeNavigation({
+        threadRef: { environmentId: "environment-test", threadId: "thread-test" },
+        presentation: "workspace",
+      }),
+    ).toThrow();
+  });
 
   it("limits a desktop snapshot to the nine global companion identities", () => {
     const projection = {

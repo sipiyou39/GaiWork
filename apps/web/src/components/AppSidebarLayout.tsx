@@ -16,6 +16,10 @@ import { useAcknowledgeCompanionCompletion } from "./companions/useAcknowledgeCo
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useUiStateStore } from "../uiStateStore";
+import {
+  MainWindowPresentationProvider,
+  useMainWindowPresentation,
+} from "./MainWindowPresentation";
 
 const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
 const THREAD_SIDEBAR_MIN_WIDTH = 13 * 16;
@@ -35,7 +39,8 @@ export function shouldNavigateToCompanionThread(
 
 function SidebarControl() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const { toggleSidebar } = useSidebar();
+  const { open, toggleSidebar } = useSidebar();
+  const { mode, requestWorkspace } = useMainWindowPresentation();
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle");
 
   useEffect(() => {
@@ -45,12 +50,20 @@ function SidebarControl() {
 
       event.preventDefault();
       event.stopPropagation();
+      if (mode === "conversation-focus") {
+        void requestWorkspace().then(() => {
+          if (!open) toggleSidebar();
+        });
+        return;
+      }
       toggleSidebar();
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keybindings, toggleSidebar]);
+  }, [keybindings, mode, open, requestWorkspace, toggleSidebar]);
+
+  if (mode === "conversation-focus") return null;
 
   return (
     <div
@@ -71,12 +84,14 @@ function SidebarControl() {
   );
 }
 
-export function AppSidebarLayout({ children }: { children: ReactNode }) {
+function AppSidebarLayoutContent({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const router = useRouter();
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
   const acknowledgeCompanionCompletion = useAcknowledgeCompanionCompletion();
   const pathname = useLocation({ select: (location) => location.pathname });
+  const { mode } = useMainWindowPresentation();
+  const isConversationFocus = isElectron && mode === "conversation-focus";
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [isWindowFullscreen, setIsWindowFullscreen] = useState(() => {
     const getWindowFullscreenState = window.desktopBridge?.getWindowFullscreenState;
@@ -129,7 +144,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onNavigateThread = window.desktopBridge?.companions?.onNavigateThread;
     if (typeof onNavigateThread !== "function") return;
-    return onNavigateThread((threadRef) => {
+    return onNavigateThread(({ threadRef }) => {
       // Clicking a desktop companion is an explicit acknowledgement, including
       // when its conversation is already the active route.
       acknowledgeCompanionCompletion(threadRef);
@@ -163,23 +178,33 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         </Suspense>
       ) : null}
       <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={macosWindowControlsStyle}>
-        <Sidebar
-          side="left"
-          collapsible="offcanvas"
-          className="border-r border-border bg-card text-foreground"
-          resizable={{
-            minWidth: THREAD_SIDEBAR_MIN_WIDTH,
-            shouldAcceptWidth: ({ nextWidth, wrapper }) =>
-              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-          }}
-        >
-          <ThreadSidebar />
-          <SidebarRail />
-        </Sidebar>
+        {!isConversationFocus ? (
+          <Sidebar
+            side="left"
+            collapsible="offcanvas"
+            className="border-r border-border bg-card text-foreground"
+            resizable={{
+              minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+              shouldAcceptWidth: ({ nextWidth, wrapper }) =>
+                wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+              storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+            }}
+          >
+            <ThreadSidebar />
+            <SidebarRail />
+          </Sidebar>
+        ) : null}
         {children}
         <SidebarControl />
       </SidebarProvider>
     </CompanionPickerProvider>
+  );
+}
+
+export function AppSidebarLayout({ children }: { children: ReactNode }) {
+  return (
+    <MainWindowPresentationProvider>
+      <AppSidebarLayoutContent>{children}</AppSidebarLayoutContent>
+    </MainWindowPresentationProvider>
   );
 }

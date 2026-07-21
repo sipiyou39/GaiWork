@@ -56,6 +56,8 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.stateDir, "/tmp/t3/dev");
       assert.equal(environment.desktopSettingsPath, "/tmp/t3/dev/desktop-settings.json");
       assert.equal(environment.clientSettingsPath, "/tmp/t3/dev/client-settings.json");
+      assert.equal(environment.companionPositionsPath, "/tmp/t3/dev/companion-positions.json");
+      assert.equal(environment.windowPresentationPath, "/tmp/t3/dev/window-presentation.json");
       assert.equal(environment.savedEnvironmentRegistryPath, "/tmp/t3/dev/saved-environments.json");
       assert.equal(environment.serverSettingsPath, "/tmp/t3/dev/settings.json");
       assert.equal(environment.logDir, "/tmp/t3/dev/logs");

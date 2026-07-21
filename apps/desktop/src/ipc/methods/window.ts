@@ -2,6 +2,9 @@ import {
   ContextMenuItemSchema,
   DesktopAppBrandingSchema,
   DesktopEnvironmentBootstrapSchema,
+  MainWindowPresentationAcknowledgement,
+  MainWindowPresentationMode,
+  MainWindowPresentationSnapshot,
   DesktopThemeSchema,
   PickFolderOptionsSchema,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
@@ -22,6 +25,7 @@ import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import * as DesktopWindow from "../../window/DesktopWindow.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import {
@@ -63,6 +67,37 @@ export const getWindowFullscreenState = DesktopIpc.makeSyncIpcMethod({
     const window = yield* electronWindow.currentMainOrFirst;
     return Option.isSome(window) && window.value.isFullScreen();
   }),
+});
+
+export const getMainWindowPresentation = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_MAIN_WINDOW_PRESENTATION_CHANNEL,
+  result: MainWindowPresentationSnapshot,
+  handler: Effect.fn("desktop.ipc.window.getMainWindowPresentation")(function* () {
+    const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    return yield* desktopWindow.getPresentation;
+  }),
+});
+
+export const requestMainWindowPresentation = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.REQUEST_MAIN_WINDOW_PRESENTATION_CHANNEL,
+  payload: MainWindowPresentationMode,
+  result: MainWindowPresentationSnapshot,
+  handler: Effect.fn("desktop.ipc.window.requestMainWindowPresentation")(function* (mode, event) {
+    const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    return yield* desktopWindow.requestPresentation(mode, event.sender.id);
+  }),
+});
+
+export const acknowledgeMainWindowPresentation = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.ACKNOWLEDGE_MAIN_WINDOW_PRESENTATION_CHANNEL,
+  payload: MainWindowPresentationAcknowledgement,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.acknowledgeMainWindowPresentation")(
+    function* (input, event) {
+      const desktopWindow = yield* DesktopWindow.DesktopWindow;
+      yield* desktopWindow.acknowledgePresentation(input, event.sender.id);
+    },
+  ),
 });
 
 export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({

@@ -83,6 +83,7 @@ import {
   openUrlInPreview,
   BrowserPreviewUnavailableError,
 } from "../browser/openFileInPreview";
+import { useMainWindowPresentation } from "./MainWindowPresentation";
 
 class CodeHighlightErrorBoundary extends React.Component<
   { fallback: ReactNode; children: ReactNode },
@@ -1025,6 +1026,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   onOpenInBrowser,
   className,
 }: MarkdownFileLinkProps) {
+  const { runInWorkspace } = useMainWindowPresentation();
   const handleOpenInEditor = useCallback(() => {
     void (async () => {
       try {
@@ -1065,14 +1067,16 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
       handleOpenInEditor();
       return;
     }
-    useRightPanelStore.getState().openFile(threadRef, workspaceRelativePath, line);
-  }, [handleOpenInEditor, line, threadRef, workspaceRelativePath]);
+    void runInWorkspace(() => {
+      useRightPanelStore.getState().openFile(threadRef, workspaceRelativePath, line);
+    });
+  }, [handleOpenInEditor, line, runInWorkspace, threadRef, workspaceRelativePath]);
 
   const handleOpenInBrowser = useCallback(() => {
     if (!onOpenInBrowser) {
       return;
     }
-    void (async () => {
+    void runInWorkspace(async () => {
       try {
         const result = await onOpenInBrowser();
         if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
@@ -1103,8 +1107,8 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
           }),
         );
       }
-    })();
-  }, [onOpenInBrowser, targetPath]);
+    });
+  }, [onOpenInBrowser, runInWorkspace, targetPath]);
 
   const handleCopy = useCallback(
     (value: string, title: string) => {
@@ -1258,6 +1262,7 @@ function ChatMarkdown({
   lineBreaks = false,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
+  const { runInWorkspace } = useMainWindowPresentation();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
   });
@@ -1318,9 +1323,9 @@ function ChatMarkdown({
           ),
         );
       }
-      return openUrlInPreview({ threadRef, url, openPreview });
+      return runInWorkspace(() => openUrlInPreview({ threadRef, url, openPreview }));
     },
-    [openPreview, threadRef],
+    [openPreview, runInWorkspace, threadRef],
   );
   const openMarkdownFileInPreview = useCallback(
     (path: string) => {
@@ -1335,15 +1340,17 @@ function ChatMarkdown({
           ),
         );
       }
-      return openFileInPreview({
-        threadRef,
-        filePath: path,
-        httpBaseUrl: preparedConnection.value.httpBaseUrl,
-        createAssetUrl,
-        openPreview,
-      });
+      return runInWorkspace(() =>
+        openFileInPreview({
+          threadRef,
+          filePath: path,
+          httpBaseUrl: preparedConnection.value.httpBaseUrl,
+          createAssetUrl,
+          openPreview,
+        }),
+      );
     },
-    [createAssetUrl, openPreview, preparedConnection, threadRef],
+    [createAssetUrl, openPreview, preparedConnection, runInWorkspace, threadRef],
   );
   const markdownComponents = useMemo<Components>(
     () => ({

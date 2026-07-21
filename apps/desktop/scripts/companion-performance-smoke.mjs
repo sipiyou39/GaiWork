@@ -50,6 +50,8 @@ NodeFS.writeFileSync(
 const companionIds = JSON.parse(process.env.GAIWORK_PERF_COMPANION_IDS);
 const projection = {
   displayId: "performance-display",
+  companionsVisible: true,
+  visibilityControl: null,
   companions: companionIds.map((companionId, index) => ({
     companionId,
     signal: "idle",
